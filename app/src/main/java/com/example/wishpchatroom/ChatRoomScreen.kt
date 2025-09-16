@@ -8,13 +8,18 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
-import androidx.compose.material.Button
-import androidx.compose.material.Checkbox
-import androidx.compose.material.OutlinedButton
-import androidx.compose.material.OutlinedTextField
-import androidx.compose.material.Text
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -24,8 +29,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -35,11 +40,11 @@ import com.example.wishpchatroom.viewmodel.RoomViewModel
 
 @Composable
 fun ChatRoomScreen(
+    authViewModel: AuthViewModel, // Receive as parameter
     onJoinRoom: (String) -> Unit,
     onNavigateToLogin: () -> Unit
 ) {
-    val roomViewModel: RoomViewModel = viewModel()
-    val authViewModel: AuthViewModel = viewModel()
+    val roomViewModel: RoomViewModel = viewModel() // Only RoomViewModel created here
 
     var roomCode by remember { mutableStateOf("") }
     var username by remember { mutableStateOf("") }
@@ -69,138 +74,209 @@ fun ChatRoomScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp),
+            .statusBarsPadding()
+            .padding(16.dp)
+            .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.Top,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // Header
+        // Header with improved styling
         Text(
             text = "WishP Chat Room",
-            fontSize = 24.sp,
+            fontSize = 28.sp,
             fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(vertical = 16.dp)
+            color = MaterialTheme.colorScheme.primary,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(vertical = 24.dp)
         )
 
-        // Mode selection
-        Row(
+        // Mode selection with improved UI
+        Card(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceEvenly
+            elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surface
+            )
         ) {
-            Button(
-                onClick = { isCreateMode = true },
-                modifier = Modifier.weight(1f)
+            Column(
+                modifier = Modifier.padding(16.dp)
             ) {
-                Text("Create Room")
-            }
-            Spacer(modifier = Modifier.width(8.dp))
-            Button(
-                onClick = { isCreateMode = false },
-                modifier = Modifier.weight(1f)
-            ) {
-                Text("Join Room")
+                Text(
+                    text = "Select Action",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        onClick = { isCreateMode = true },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (isCreateMode) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.outline
+                        )
+                    ) {
+                        Text("Create Room")
+                    }
+
+                    Button(
+                        onClick = { isCreateMode = false },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (!isCreateMode) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.outline
+                        )
+                    ) {
+                        Text("Join Room")
+                    }
+                }
             }
         }
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // Username input
-        OutlinedTextField(
-            value = username,
-            onValueChange = { username = it },
-            label = { Text("Username") },
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(8.dp)
-        )
-
-        // Room code input (for join mode)
-        if (!isCreateMode) {
-            OutlinedTextField(
-                value = roomCode,
-                onValueChange = { roomCode = it.uppercase() },
-                label = { Text("Room Code") },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(8.dp)
+        // Input fields with improved styling
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surface
             )
-        }
-
-        // Temporary room checkbox (for create mode)
-        if (isCreateMode) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(8.dp),
-                verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp)
             ) {
-                Checkbox(
-                    checked = isTemporary,
-                    onCheckedChange = { isTemporary = it }
+                OutlinedTextField(
+                    value = username,
+                    onValueChange = { username = it },
+                    label = { Text("Username", color = MaterialTheme.colorScheme.onSurface) },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
                 )
-                Text(
-                    text = "Temporary Room (auto-delete when creator leaves)",
-                    modifier = Modifier.padding(start = 8.dp)
-                )
-            }
-        }
 
-        // Error message
-        if (errorMessage.isNotEmpty()) {
-            Text(
-                text = errorMessage,
-                color = Color.Red,
-                modifier = Modifier.padding(8.dp)
-            )
-        }
+                Spacer(modifier = Modifier.height(16.dp))
 
-        // Action button
-        Button(
-            onClick = {
-                if (username.isNotBlank()) {
-                    if (isCreateMode) {
-                        roomViewModel.createRoom(username, isTemporary)
-                    } else {
-                        if (roomCode.isNotBlank()) {
-                            roomViewModel.joinRoom(roomCode, username) { success ->
-                                if (success) {
-                                    onJoinRoom(roomCode)
+                if (!isCreateMode) {
+                    OutlinedTextField(
+                        value = roomCode,
+                        onValueChange = { roomCode = it.uppercase() },
+                        label = { Text("Room Code", color = MaterialTheme.colorScheme.onSurface) },
+                        placeholder = { Text("e.g., ABC123") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                }
+
+                if (isCreateMode) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Checkbox(
+                            checked = isTemporary,
+                            onCheckedChange = { isTemporary = it }
+                        )
+                        Text(
+                            text = "Temporary Room (auto-delete when creator leaves)",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.padding(start = 8.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(16.dp))
+                }
+
+                if (errorMessage.isNotEmpty()) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.errorContainer
+                        )
+                    ) {
+                        Text(
+                            text = errorMessage,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            modifier = Modifier.padding(12.dp),
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(16.dp))
+                }
+
+                Button(
+                    onClick = {
+                        if (username.isNotBlank()) {
+                            if (isCreateMode) {
+                                roomViewModel.createRoom(username, isTemporary)
+                            } else {
+                                if (roomCode.isNotBlank()) {
+                                    roomViewModel.joinRoom(roomCode, username) { success ->
+                                        if (success) {
+                                            onJoinRoom(roomCode)
+                                        }
+                                    }
                                 }
                             }
                         }
-                    }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = username.isNotBlank() && (isCreateMode || roomCode.isNotBlank())
+                ) {
+                    Text(
+                        text = if (isCreateMode) "Create & Join Room" else "Join Room",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Medium
+                    )
                 }
-            },
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(8.dp),
-            enabled = username.isNotBlank() && (isCreateMode || roomCode.isNotBlank())
-        ) {
-            Text(if (isCreateMode) "Create & Join Room" else "Join Room")
+            }
         }
 
-        Spacer(modifier = Modifier.height(32.dp))
+        Spacer(modifier = Modifier.height(24.dp))
 
-        // Logout button
-        OutlinedButton(
-            onClick = {
-                authViewModel.logout()
-                onNavigateToLogin()
-            },
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(8.dp)
-        ) {
-            Text("Logout")
-        }
-
-        // User info
-        currentUser?.let { user ->
-            Spacer(modifier = Modifier.height(16.dp))
-            Text(
-                text = "Logged in as: ${user.firstName} ${user.lastName}",
-                style = MaterialTheme.typography.bodySmall,
-                color = Color.Gray
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surface
             )
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                currentUser?.let { user ->
+                    Text(
+                        text = "Logged in as:",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                    )
+                    Text(
+                        text = "${user.firstName} ${user.lastName}",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.padding(bottom = 12.dp)
+                    )
+                }
+
+                OutlinedButton(
+                    onClick = {
+                        authViewModel.logout()
+                        onNavigateToLogin()
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "Logout",
+                        fontSize = 16.sp
+                    )
+                }
+            }
         }
     }
 }

@@ -1,32 +1,38 @@
 package com.example.wishpchatroom
 
-import androidx.compose.foundation.background
+import android.util.Log
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.Button
-import androidx.compose.material.Card
-import androidx.compose.material.IconButton
-import androidx.compose.material.OutlinedButton
-import androidx.compose.material.OutlinedTextField
-import androidx.compose.material.Text
-import androidx.compose.material.TopAppBar
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -37,8 +43,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -50,15 +54,15 @@ import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import androidx.compose.foundation.layout.widthIn
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatScreen(
     roomCode: String,
+    authViewModel: AuthViewModel,
     onNavigateBack: () -> Unit
 ) {
     val chatViewModel: ChatViewModel = viewModel()
-    val authViewModel: AuthViewModel = viewModel()
 
     var messageText by remember { mutableStateOf("") }
     var isRoomOwner by remember { mutableStateOf(false) }
@@ -69,8 +73,10 @@ fun ChatScreen(
     val coroutineScope = rememberCoroutineScope()
 
     LaunchedEffect(roomCode) {
+        Log.d("ChatScreen", "Loading messages for room: $roomCode")
         chatViewModel.loadMessages(roomCode)
         chatViewModel.checkRoomOwnership(roomCode) { isOwner ->
+            Log.d("ChatScreen", "Room ownership checked: $isOwner")
             isRoomOwner = isOwner
         }
     }
@@ -83,77 +89,126 @@ fun ChatScreen(
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        // Top Bar
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .statusBarsPadding()
+            .navigationBarsPadding()
+    ) {
         TopAppBar(
             title = {
                 Column {
-                    Text("Room: $roomCode", fontWeight = FontWeight.Bold)
+                    Text(
+                        text = "Room: $roomCode",
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
                     if (isRoomOwner) {
-                        Text("(Owner)", fontSize = 12.sp, color = Color.Gray)
+                        Text(
+                            text = "(Owner)",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f)
+                        )
                     }
                 }
             },
             navigationIcon = {
-                IconButton(onClick = onNavigateBack) {
-                    Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                IconButton(
+                    onClick = {
+                        Log.d("ChatScreen", "Back button clicked")
+                        onNavigateBack()
+                    }
+                ) {
+                    Icon(
+                        Icons.Default.ArrowBack,
+                        contentDescription = "Back",
+                        tint = MaterialTheme.colorScheme.onPrimary
+                    )
                 }
             },
             actions = {
                 if (isRoomOwner) {
                     OutlinedButton(
                         onClick = {
-                            chatViewModel.closeRoom(roomCode)
+                            Log.d("ChatScreen", "Close room button clicked")
+                            // Don't wait for closeRoom to complete - navigate immediately
                             onNavigateBack()
+                            // Close room in background
+                            coroutineScope.launch {
+                                chatViewModel.closeRoom(roomCode)
+                            }
                         },
-                        modifier = Modifier.padding(end = 8.dp)
+                        modifier = Modifier.padding(end = 8.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = MaterialTheme.colorScheme.onPrimary
+                        )
                     ) {
                         Text("Close Room", fontSize = 12.sp)
                     }
                 }
-            }
+            },
+            colors = TopAppBarDefaults.topAppBarColors(
+                containerColor = MaterialTheme.colorScheme.primary
+            )
         )
 
-        // Messages List
         LazyColumn(
             modifier = Modifier
                 .weight(1f)
-                .padding(8.dp),
+                .padding(horizontal = 8.dp),
             state = listState,
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            item { Spacer(modifier = Modifier.height(8.dp)) }
+
             items(messages) { message ->
                 MessageCard(
                     message = message,
                     isCurrentUser = message.username == currentUser?.firstName
                 )
             }
+
+            item { Spacer(modifier = Modifier.height(8.dp)) }
         }
 
-        // Message Input
-        Row(
+        Card(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(8.dp),
-            verticalAlignment = Alignment.CenterVertically
+            elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
         ) {
-            OutlinedTextField(
-                value = messageText,
-                onValueChange = { messageText = it },
-                placeholder = { Text("Type a message...") },
-                modifier = Modifier.weight(1f)
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Button(
-                onClick = {
-                    if (messageText.isNotBlank() && currentUser != null) {
-                        chatViewModel.sendMessage(roomCode, messageText, currentUser!!.firstName)
-                        messageText = ""
-                    }
-                },
-                enabled = messageText.isNotBlank()
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(Icons.Default.Send, contentDescription = "Send")
+                OutlinedTextField(
+                    value = messageText,
+                    onValueChange = { messageText = it },
+                    placeholder = {
+                        Text(
+                            "Type a message...",
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                        )
+                    },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(24.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Button(
+                    onClick = {
+                        if (messageText.isNotBlank() && currentUser != null) {
+                            chatViewModel.sendMessage(roomCode, messageText, currentUser!!.firstName)
+                            messageText = ""
+                        }
+                    },
+                    enabled = messageText.isNotBlank(),
+                    modifier = Modifier.height(56.dp),
+                    shape = RoundedCornerShape(28.dp)
+                ) {
+                    Icon(Icons.Default.Send, contentDescription = "Send")
+                }
             }
         }
     }
@@ -174,11 +229,20 @@ fun MessageCard(
             modifier = Modifier
                 .padding(horizontal = 8.dp)
                 .widthIn(max = 280.dp),
-            backgroundColor = if (isCurrentUser)
-                MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
-            else
-                MaterialTheme.colorScheme.surface,
-            elevation = 4.dp
+            colors = CardDefaults.cardColors(
+                containerColor = if (isCurrentUser) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.secondaryContainer
+                }
+            ),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+            shape = RoundedCornerShape(
+                topStart = 16.dp,
+                topEnd = 16.dp,
+                bottomStart = if (isCurrentUser) 16.dp else 4.dp,
+                bottomEnd = if (isCurrentUser) 4.dp else 16.dp
+            )
         ) {
             Column(
                 modifier = Modifier.padding(12.dp)
@@ -188,19 +252,28 @@ fun MessageCard(
                         text = message.username,
                         fontWeight = FontWeight.Bold,
                         fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.primary
+                        color = MaterialTheme.colorScheme.onSecondaryContainer
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                 }
                 Text(
                     text = message.messageText,
-                    fontSize = 14.sp
+                    fontSize = 14.sp,
+                    color = if (isCurrentUser) {
+                        MaterialTheme.colorScheme.onPrimary
+                    } else {
+                        MaterialTheme.colorScheme.onSecondaryContainer
+                    }
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = timeFormat.format(Date(message.timestamp)),
                     fontSize = 10.sp,
-                    color = Color.Gray
+                    color = if (isCurrentUser) {
+                        MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.7f)
+                    } else {
+                        MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
+                    }
                 )
             }
         }

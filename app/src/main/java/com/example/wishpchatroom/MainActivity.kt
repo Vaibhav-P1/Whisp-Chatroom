@@ -1,6 +1,7 @@
 package com.example.wishpchatroom
 
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.fillMaxSize
@@ -11,6 +12,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.ui.Modifier
+import androidx.core.view.WindowCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
@@ -23,6 +25,9 @@ import com.example.wishpchatroom.viewmodel.AuthViewModel
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+
         setContent {
             val navController = rememberNavController()
             val authViewModel: AuthViewModel = viewModel()
@@ -72,21 +77,30 @@ fun NavigationGraph(
         composable(Screen.SignupScreen.route) {
             SignUpScreen(
                 authViewModel = authViewModel,
-                onNavigateToLogin = { navController.navigate(Screen.LoginScreen.route) }
+                onNavigateToLogin = {
+                    Log.d("Navigation", "Navigating to Login")
+                    navController.navigate(Screen.LoginScreen.route)
+                }
             )
         }
         composable(Screen.LoginScreen.route) {
             LoginScreen(
                 authViewModel = authViewModel,
-                onNavigateToSignUp = { navController.navigate(Screen.SignupScreen.route) }
+                onNavigateToSignUp = {
+                    Log.d("Navigation", "Navigating to SignUp")
+                    navController.navigate(Screen.SignupScreen.route)
+                }
             )
         }
         composable(Screen.ChatRoomsScreen.route) {
             ChatRoomScreen(
+                authViewModel = authViewModel,
                 onJoinRoom = { roomCode ->
+                    Log.d("Navigation", "Joining room: $roomCode")
                     navController.navigate("${Screen.ChatScreen.route}/$roomCode")
                 },
                 onNavigateToLogin = {
+                    Log.d("Navigation", "Logging out, navigating to Login")
                     navController.navigate(Screen.LoginScreen.route) {
                         popUpTo(Screen.ChatRoomsScreen.route) { inclusive = true }
                     }
@@ -95,9 +109,17 @@ fun NavigationGraph(
         }
         composable("${Screen.ChatScreen.route}/{roomCode}") { backStackEntry ->
             val roomCode = backStackEntry.arguments?.getString("roomCode") ?: ""
+            Log.d("Navigation", "In ChatScreen with room: $roomCode")
             ChatScreen(
                 roomCode = roomCode,
-                onNavigateBack = { navController.popBackStack() }
+                authViewModel = authViewModel,
+                onNavigateBack = {
+                    Log.d("Navigation", "Back button clicked - navigating back")
+                    // Force navigate back to ChatRoomsScreen instead of just popping
+                    navController.navigate(Screen.ChatRoomsScreen.route) {
+                        popUpTo("${Screen.ChatScreen.route}/$roomCode") { inclusive = true }
+                    }
+                }
             )
         }
     }
