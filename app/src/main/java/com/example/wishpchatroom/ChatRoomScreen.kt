@@ -1,5 +1,6 @@
 package com.example.wishpchatroom
 
+import android.content.Context
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -29,6 +30,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -40,16 +42,19 @@ import com.example.wishpchatroom.viewmodel.RoomViewModel
 
 @Composable
 fun ChatRoomScreen(
-    authViewModel: AuthViewModel, // Receive as parameter
+    authViewModel: AuthViewModel,
     onJoinRoom: (String) -> Unit,
     onNavigateToLogin: () -> Unit
 ) {
-    val roomViewModel: RoomViewModel = viewModel() // Only RoomViewModel created here
+    val roomViewModel: RoomViewModel = viewModel()
+    val context = LocalContext.current
+    val sharedPref = context.getSharedPreferences("user_prefs", Context.MODE_PRIVATE)
 
     var roomCode by remember { mutableStateOf("") }
-    var username by remember { mutableStateOf("") }
+    var username by remember { mutableStateOf(sharedPref.getString("default_username", "") ?: "") }
     var isCreateMode by remember { mutableStateOf(true) }
     var isTemporary by remember { mutableStateOf(false) }
+    var useSavedUsername by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf("") }
 
     val roomResult by roomViewModel.roomResult.observeAsState()
@@ -59,6 +64,13 @@ fun ChatRoomScreen(
         when (roomResult) {
             is com.example.wishpchatroom.data.Result.Success -> {
                 val generatedRoomCode = (roomResult as Result.Success<String>).data
+                // Save username if checkbox is checked
+                if (useSavedUsername && username.isNotBlank()) {
+                    with(sharedPref.edit()) {
+                        putString("default_username", username)
+                        apply()
+                    }
+                }
                 onJoinRoom(generatedRoomCode)
                 errorMessage = ""
             }
@@ -80,7 +92,6 @@ fun ChatRoomScreen(
         verticalArrangement = Arrangement.Top,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // Header with improved styling
         Text(
             text = "WishP Chat Room",
             fontSize = 28.sp,
@@ -90,7 +101,6 @@ fun ChatRoomScreen(
             modifier = Modifier.padding(vertical = 24.dp)
         )
 
-        // Mode selection with improved UI
         Card(
             modifier = Modifier.fillMaxWidth(),
             elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
@@ -139,7 +149,6 @@ fun ChatRoomScreen(
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // Input fields with improved styling
         Card(
             modifier = Modifier.fillMaxWidth(),
             elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
@@ -157,6 +166,30 @@ fun ChatRoomScreen(
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
                 )
+
+                // Use saved username checkbox
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Checkbox(
+                        checked = useSavedUsername,
+                        onCheckedChange = {
+                            useSavedUsername = it
+                            if (it && username.isBlank()) {
+                                username = sharedPref.getString("default_username", "") ?: ""
+                            }
+                        }
+                    )
+                    Text(
+                        text = "Save as default username",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.padding(start = 8.dp)
+                    )
+                }
 
                 Spacer(modifier = Modifier.height(16.dp))
 
@@ -217,6 +250,12 @@ fun ChatRoomScreen(
                                 if (roomCode.isNotBlank()) {
                                     roomViewModel.joinRoom(roomCode, username) { success ->
                                         if (success) {
+                                            if (useSavedUsername) {
+                                                with(sharedPref.edit()) {
+                                                    putString("default_username", username)
+                                                    apply()
+                                                }
+                                            }
                                             onJoinRoom(roomCode)
                                         }
                                     }

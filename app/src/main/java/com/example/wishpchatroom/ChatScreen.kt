@@ -1,5 +1,9 @@
 package com.example.wishpchatroom
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
 import android.util.Log
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -10,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
@@ -19,7 +24,11 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -31,6 +40,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -43,6 +53,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -63,9 +74,11 @@ fun ChatScreen(
     onNavigateBack: () -> Unit
 ) {
     val chatViewModel: ChatViewModel = viewModel()
+    val context = LocalContext.current
 
     var messageText by remember { mutableStateOf("") }
     var isRoomOwner by remember { mutableStateOf(false) }
+    var showDeleteDialog by remember { mutableStateOf(false) }
 
     val messages by chatViewModel.messages.observeAsState(emptyList())
     val currentUser by authViewModel.currentUser.observeAsState()
@@ -87,6 +100,31 @@ fun ChatScreen(
                 listState.animateScrollToItem(messages.size - 1)
             }
         }
+    }
+
+    // Delete confirmation dialog
+    if (showDeleteDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            title = { Text("Delete Room") },
+            text = { Text("Are you sure you want to permanently delete this room? This action cannot be undone.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        chatViewModel.deleteRoom(roomCode)
+                        showDeleteDialog = false
+                        onNavigateBack()
+                    }
+                ) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 
     Column(
@@ -127,23 +165,66 @@ fun ChatScreen(
                 }
             },
             actions = {
+                // Copy room code button
+                IconButton(
+                    onClick = {
+                        val clipboardManager = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        val clip = ClipData.newPlainText("Room Code", roomCode)
+                        clipboardManager.setPrimaryClip(clip)
+                    }
+                ) {
+                    Icon(
+                        Icons.Default.ContentCopy,
+                        contentDescription = "Copy Room Code",
+                        tint = MaterialTheme.colorScheme.onPrimary
+                    )
+                }
+
+                // Share room code button
+                IconButton(
+                    onClick = {
+                        val shareIntent = Intent().apply {
+                            action = Intent.ACTION_SEND
+                            putExtra(Intent.EXTRA_TEXT, "Join my chat room with code: $roomCode")
+                            type = "text/plain"
+                        }
+                        context.startActivity(Intent.createChooser(shareIntent, "Share Room Code"))
+                    }
+                ) {
+                    Icon(
+                        Icons.Default.Share,
+                        contentDescription = "Share Room Code",
+                        tint = MaterialTheme.colorScheme.onPrimary
+                    )
+                }
+
                 if (isRoomOwner) {
+                    // Close room button
                     OutlinedButton(
                         onClick = {
                             Log.d("ChatScreen", "Close room button clicked")
-                            // Don't wait for closeRoom to complete - navigate immediately
                             onNavigateBack()
-                            // Close room in background
                             coroutineScope.launch {
                                 chatViewModel.closeRoom(roomCode)
                             }
                         },
-                        modifier = Modifier.padding(end = 8.dp),
+                        modifier = Modifier.padding(horizontal = 4.dp),
                         colors = ButtonDefaults.outlinedButtonColors(
                             contentColor = MaterialTheme.colorScheme.onPrimary
                         )
                     ) {
-                        Text("Close Room", fontSize = 12.sp)
+                        Text("Close", fontSize = 12.sp)
+                    }
+
+                    // Delete room button
+                    IconButton(
+                        onClick = { showDeleteDialog = true }
+                    ) {
+                        Icon(
+                            Icons.Default.Delete,
+                            contentDescription = "Delete Room",
+                            tint = MaterialTheme.colorScheme.onPrimary
+                        )
                     }
                 }
             },

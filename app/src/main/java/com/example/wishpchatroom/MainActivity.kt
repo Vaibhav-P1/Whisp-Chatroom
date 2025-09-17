@@ -8,11 +8,15 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.core.view.WindowCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
@@ -21,6 +25,7 @@ import androidx.navigation.compose.rememberNavController
 import com.example.wishpchatroom.navigation.Screen
 import com.example.wishpchatroom.ui.theme.WishpChatRoomTheme
 import com.example.wishpchatroom.viewmodel.AuthViewModel
+import com.example.wishpchatroom.viewmodel.ChatViewModel
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -110,12 +115,11 @@ fun NavigationGraph(
         composable("${Screen.ChatScreen.route}/{roomCode}") { backStackEntry ->
             val roomCode = backStackEntry.arguments?.getString("roomCode") ?: ""
             Log.d("Navigation", "In ChatScreen with room: $roomCode")
-            ChatScreen(
+            ChatScreenWithLifecycle(
                 roomCode = roomCode,
                 authViewModel = authViewModel,
                 onNavigateBack = {
                     Log.d("Navigation", "Back button clicked - navigating back")
-                    // Force navigate back to ChatRoomsScreen instead of just popping
                     navController.navigate(Screen.ChatRoomsScreen.route) {
                         popUpTo("${Screen.ChatScreen.route}/$roomCode") { inclusive = true }
                     }
@@ -123,4 +127,57 @@ fun NavigationGraph(
             )
         }
     }
+}
+
+@Composable
+fun ChatScreenWithLifecycle(
+    roomCode: String,
+    authViewModel: AuthViewModel,
+    onNavigateBack: () -> Unit
+) {
+    val chatViewModel: ChatViewModel = viewModel()
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val currentUser by authViewModel.currentUser.observeAsState()
+
+    // Handle temporary room cleanup on app lifecycle changes
+    DisposableEffect(roomCode, lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_PAUSE -> {
+                    // Update user presence to offline
+                    currentUser?.let { user ->
+                        chatViewModel.updateUserPresence(roomCode, user.firstName, false)
+                    }
+                }
+                Lifecycle.Event.ON_RESUME -> {
+                    // Update user presence to online
+                    currentUser?.let { user ->
+                        chatViewModel.updateUserPresence(roomCode, user.firstName, true)
+                    }
+                }
+                Lifecycle.Event.ON_STOP -> {
+                    // Check if this is a temporary room and user is the creator
+                    chatViewModel.checkAndDeleteTemporaryRoom(roomCode)
+                }
+                else -> {}
+            }
+        }
+
+        lifecycleOwner.lifecycle.addObserver(observer)
+
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            // Final cleanup when leaving the screen
+            currentUser?.let { user ->
+                chatViewModel.updateUserPresence(roomCode, user.firstName, false)
+                chatViewModel.checkAndDeleteTemporaryRoom(roomCode)
+            }
+        }
+    }
+
+    ChatScreen(
+        roomCode = roomCode,
+        authViewModel = authViewModel,
+        onNavigateBack = onNavigateBack
+    )
 }

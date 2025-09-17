@@ -39,4 +39,22 @@ class ChatViewModel : ViewModel() {
             chatRepository.closeRoom(roomCode)
         }
     }
+
+    fun deleteRoom(roomCode: String) {
+        viewModelScope.launch {
+            chatRepository.deleteRoom(roomCode)
+        }
+    }
+
+    fun updateUserPresence(roomCode: String, username: String, isPresent: Boolean) {
+        viewModelScope.launch {
+            chatRepository.updateUserPresence(roomCode, username, isPresent)
+        }
+    }
+
+    fun checkAndDeleteTemporaryRoom(roomCode: String) {
+        viewModelScope.launch {
+            chatRepository.checkAndDeleteTemporaryRoom(roomCode)
+        }
+    }
 }
