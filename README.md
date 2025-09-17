@@ -44,6 +44,11 @@ Users can chat anonymously with unique usernames per room.
 
 <img width="435" height="934" alt="image" src="https://github.com/user-attachments/assets/9fe04385-79e3-49ff-b8b4-7cb9b8ae595f" />
 <img width="429" height="944" alt="image" src="https://github.com/user-attachments/assets/6f1f2503-a247-44ed-bab9-b6f8b9137e22" />
+![WhatsApp Image 2025-09-17 at 13 18 16_7113b345](https://github.com/user-attachments/assets/9d6b0169-5ddb-4109-a2f5-cfb61343e7b1)
+![WhatsApp Image 2025-09-17 at 13 20 31_2d6510f4](https://github.com/user-attachments/assets/4ff0b89c-54ee-4e29-b779-1636b6d265bf)
+
+
+
 
 ###⚠️ Important Setup Instruction
 
