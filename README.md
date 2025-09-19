@@ -58,7 +58,7 @@ Users can chat anonymously with unique usernames per room.
 ---
 
 
-###⚠️ Important Setup Instruction
+### ⚠️ Important Setup Instruction
 
 To run this project, you must add your own Firebase config file.
 
