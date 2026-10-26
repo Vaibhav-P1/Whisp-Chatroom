@@ -192,6 +192,68 @@ describe('presence', () => {
   });
 });
 
+describe('replies, edits, deletes and reactions', () => {
+  const messageRef = (uid, id = 'm1') => doc(asUser(uid), 'rooms', ROOM, 'messages', id);
+  const reply = { id: 'm1', username: 'Alice', text: 'hi' };
+  const newMessage = (extra = {}) => ({
+    uid: 'owner', username: 'Owner', messageText: 'a reply', timestamp: serverTimestamp(), ...extra,
+  });
+
+  it('accepts a well-formed reply reference and rejects a malformed one', async () => {
+    await seedRoom();
+    const ref = (id) => doc(asUser('owner'), 'rooms', ROOM, 'messages', id);
+    await assertSucceeds(setDoc(ref('r1'), newMessage({ replyTo: reply })));
+    await assertFails(setDoc(ref('r2'), newMessage({ replyTo: { ...reply, extra: 1 } })));
+    await assertFails(setDoc(ref('r3'), newMessage({ replyTo: { ...reply, text: 'x'.repeat(201) } })));
+    await assertFails(setDoc(ref('r4'), newMessage({ replyTo: 'm1' })));
+  });
+
+  it('lets only the author edit, and only the text', async () => {
+    await seedRoom();
+    // Checked first: before the first edit, the change must also flag the message as edited.
+    await assertFails(updateDoc(messageRef('alice'), { messageText: 'fixed' }));
+    await assertFails(updateDoc(messageRef('owner'), { messageText: 'hijack', edited: true }));
+    await assertFails(updateDoc(messageRef('alice'), { messageText: '', edited: true }));
+    await assertFails(updateDoc(messageRef('alice'), { messageText: 'x'.repeat(2001), edited: true }));
+    await assertFails(updateDoc(messageRef('alice'), { messageText: 'fixed', edited: true, username: 'Mallory' }));
+    await assertFails(updateDoc(messageRef('alice'), { uid: 'owner' }));
+    await assertSucceeds(updateDoc(messageRef('alice'), { messageText: 'fixed', edited: true }));
+  });
+
+  it('blocks editing once the room is closed or the message is deleted', async () => {
+    await seedRoom({ roomOpen: false });
+    await assertFails(updateDoc(messageRef('alice'), { messageText: 'late', edited: true }));
+  });
+
+  it('lets the author or the owner soft-delete, but nobody else', async () => {
+    await seedRoom();
+    await assertFails(updateDoc(messageRef('stranger'), { deleted: true, messageText: '' }));
+    await assertFails(updateDoc(messageRef('owner'), { deleted: true })); // text must be cleared too
+    await assertSucceeds(updateDoc(messageRef('alice'), { deleted: true, messageText: '' }));
+    // A deleted message can no longer be edited back to life.
+    await assertFails(updateDoc(messageRef('alice'), { messageText: 'undelete', edited: true }));
+  });
+
+  it('lets the owner soft-delete someone else\'s message', async () => {
+    await seedRoom();
+    await assertSucceeds(updateDoc(messageRef('owner'), { deleted: true, messageText: '' }));
+  });
+
+  it('lets members react with supported emoji only, and only on open rooms', async () => {
+    await seedRoom();
+    await assertSucceeds(updateDoc(messageRef('owner'), { reactions: { '👍': ['owner'] } }));
+    await assertSucceeds(updateDoc(messageRef('alice'), { reactions: { '👍': ['alice', 'owner'], '🙏': ['alice'] } }));
+    await assertFails(updateDoc(messageRef('alice'), { reactions: { '💩': ['alice'] } }));
+    await assertFails(updateDoc(messageRef('stranger'), { reactions: { '👍': ['stranger'] } }));
+    await assertFails(updateDoc(messageRef('alice'), { reactions: { '👍': ['alice'] }, messageText: 'sneaky' }));
+  });
+
+  it('blocks reacting in a closed room', async () => {
+    await seedRoom({ roomOpen: false });
+    await assertFails(updateDoc(messageRef('alice'), { reactions: { '👍': ['alice'] } }));
+  });
+});
+
 describe('client-chosen message ids', () => {
   const msg = (uid, name) => ({
     uid, username: name, messageText: 'hello', timestamp: serverTimestamp(),

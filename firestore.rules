@@ -23,6 +23,15 @@ service cloud.firestore {
       return value is string && value.size() >= 1 && value.size() <= 50;
     }
 
+    // A quoted message that a reply points at: its id, its author and a short snippet.
+    function validReply(reply) {
+      return reply is map
+        && reply.keys().hasOnly(['id', 'username', 'text'])
+        && reply.id is string && reply.id.size() <= 100
+        && reply.username is string && reply.username.size() <= 50
+        && reply.text is string && reply.text.size() <= 200;
+    }
+
     // User profiles: only the owner can read or write their own profile.
     match /users/{uid} {
       allow read: if signedIn() && request.auth.uid == uid;
@@ -80,15 +89,43 @@ service cloud.firestore {
 
         allow create: if isMember(roomCode)
           && room(roomCode).roomOpen == true
-          && request.resource.data.keys().hasOnly(['uid', 'username', 'messageText', 'timestamp'])
+          && request.resource.data.keys().hasOnly(['uid', 'username', 'messageText', 'timestamp', 'replyTo'])
           && request.resource.data.uid == request.auth.uid
           && request.resource.data.username == room(roomCode).members[request.auth.uid]
           && request.resource.data.messageText is string
           && request.resource.data.messageText.size() >= 1
           && request.resource.data.messageText.size() <= 2000
-          && request.resource.data.timestamp == request.time;
+          && request.resource.data.timestamp == request.time
+          && (!('replyTo' in request.resource.data) || validReply(request.resource.data.replyTo));
 
-        allow update: if false;
+        // Messages are never rewritten wholesale. Exactly three kinds of change are allowed.
+        allow update: if isMember(roomCode) && (
+          // The author edits their own message while the room is open.
+          (room(roomCode).roomOpen == true
+            && resource.data.uid == request.auth.uid
+            && resource.data.get('deleted', false) != true
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['messageText', 'edited'])
+            && request.resource.data.edited == true
+            && request.resource.data.messageText is string
+            && request.resource.data.messageText.size() >= 1
+            && request.resource.data.messageText.size() <= 2000)
+          ||
+          // The author or the room owner removes a message. The document stays (so replies to it
+          // still resolve) but its text is cleared.
+          ((resource.data.uid == request.auth.uid || isOwner(roomCode))
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['deleted', 'messageText'])
+            && request.resource.data.deleted == true
+            && request.resource.data.messageText == '')
+          ||
+          // Any member reacts while the room is open. Only the reactions field changes, and only
+          // the supported emoji are accepted. (Rules cannot check that a member only touches their
+          // own uid inside the lists.)
+          (room(roomCode).roomOpen == true
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions'])
+            && request.resource.data.reactions is map
+            && request.resource.data.reactions.keys().hasOnly(['👍', '😂', '😮', '😢', '🙏']))
+        );
+
         allow delete: if isOwner(roomCode);
       }
 
