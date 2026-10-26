@@ -24,7 +24,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -37,7 +36,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.example.wishpchatroom.data.Resource
 import com.example.wishpchatroom.viewmodel.AuthViewModel
 import com.example.wishpchatroom.viewmodel.RoomViewModel
 
@@ -56,26 +54,19 @@ fun ChatRoomScreen(
     var isCreateMode by remember { mutableStateOf(true) }
     var isTemporary by remember { mutableStateOf(false) }
     var useSavedUsername by remember { mutableStateOf(false) }
-    var errorMessage by remember { mutableStateOf("") }
 
-    val isLoading by roomViewModel.isLoading.observeAsState(false)
+    val roomState by roomViewModel.uiState.collectAsStateWithLifecycle()
+    val isLoading = roomState.isLoading
+    val errorMessage = roomState.errorMessage
     val authState by authViewModel.uiState.collectAsStateWithLifecycle()
 
-    // Each create/join result arrives exactly once, so navigation cannot fire twice.
+    // Each created/joined room arrives exactly once, so navigation cannot fire twice.
     LaunchedEffect(Unit) {
-        roomViewModel.events.collect { result ->
-            when (result) {
-                is Resource.Success -> {
-                    if (useSavedUsername && username.isNotBlank()) {
-                        sharedPref.edit().putString("default_username", username.trim()).apply()
-                    }
-                    errorMessage = ""
-                    onJoinRoom(result.data)
-                }
-                is Resource.Error -> {
-                    errorMessage = result.message
-                }
+        roomViewModel.roomEntered.collect { roomCode ->
+            if (useSavedUsername && username.isNotBlank()) {
+                sharedPref.edit().putString("default_username", username.trim()).apply()
             }
+            onJoinRoom(roomCode)
         }
     }
 
@@ -220,7 +211,7 @@ fun ChatRoomScreen(
                     Spacer(modifier = Modifier.height(16.dp))
                 }
 
-                if (errorMessage.isNotEmpty()) {
+                if (errorMessage != null) {
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         colors = CardDefaults.cardColors(
@@ -239,7 +230,6 @@ fun ChatRoomScreen(
 
                 Button(
                     onClick = {
-                        errorMessage = ""
                         if (isCreateMode) {
                             roomViewModel.createRoom(username, isTemporary)
                         } else {
