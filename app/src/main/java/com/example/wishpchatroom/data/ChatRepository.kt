@@ -1,16 +1,15 @@
 package com.example.wishpchatroom.data
 
-import com.google.firebase.firestore.ListenerRegistration
+import kotlinx.coroutines.flow.Flow
 
 interface ChatRepository {
     val currentUid: String?
 
-    /** Listens to the latest messages. The caller must remove the registration. */
-    fun listenToMessages(
-        roomCode: String,
-        onMessagesChanged: (List<Message>) -> Unit,
-        onError: (Exception) -> Unit
-    ): ListenerRegistration
+    /**
+     * Streams the latest messages of a room, oldest first. The Firestore listener is attached while
+     * the flow is collected and removed when collection stops. The flow fails if the listener errors.
+     */
+    fun observeMessages(roomCode: String): Flow<List<Message>>
 
     suspend fun getRoom(roomCode: String): Room?
 

@@ -47,7 +47,6 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -58,6 +57,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.activity.compose.BackHandler
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.wishpchatroom.data.Message
@@ -78,9 +78,10 @@ fun ChatScreen(
     var messageText by remember { mutableStateOf("") }
     var showDeleteDialog by remember { mutableStateOf(false) }
 
-    val messages by chatViewModel.messages.observeAsState(emptyList())
-    val isRoomOwner by chatViewModel.isOwner.observeAsState(false)
-    val errorMessage by chatViewModel.error.observeAsState()
+    val uiState by chatViewModel.uiState.collectAsStateWithLifecycle()
+    val messages = uiState.messages
+    val isRoomOwner = uiState.isOwner
+    val errorMessage = uiState.errorMessage
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
 

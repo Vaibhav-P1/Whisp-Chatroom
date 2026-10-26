@@ -1,73 +1,77 @@
 package com.example.wishpchatroom.viewmodel
 
-import androidx.lifecycle.LiveData
-import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.wishpchatroom.data.ChatRepository
 import com.example.wishpchatroom.data.Message
 import com.example.wishpchatroom.data.Resource
-import com.google.firebase.firestore.ListenerRegistration
+import com.example.wishpchatroom.data.toUserMessage
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+
+data class ChatUiState(
+    val messages: List<Message> = emptyList(),
+    val isOwner: Boolean = false,
+    // The username this user chose for the current room.
+    val roomUsername: String? = null,
+    val errorMessage: String? = null
+)
 
 @HiltViewModel
 class ChatViewModel @Inject constructor(
     private val chatRepository: ChatRepository
 ) : ViewModel() {
 
-    private var messagesListener: ListenerRegistration? = null
+    private val _uiState = MutableStateFlow(ChatUiState())
+    val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
+
+    private var messagesJob: Job? = null
     private var isLeaving = false
-
-    private val _messages = MutableLiveData<List<Message>>()
-    val messages: LiveData<List<Message>> get() = _messages
-
-    private val _isOwner = MutableLiveData(false)
-    val isOwner: LiveData<Boolean> get() = _isOwner
-
-    // The username this user chose for the current room.
-    private val _roomUsername = MutableLiveData<String?>()
-    val roomUsername: LiveData<String?> get() = _roomUsername
-
-    private val _error = MutableLiveData<String?>()
-    val error: LiveData<String?> get() = _error
 
     val currentUid: String? get() = chatRepository.currentUid
 
     fun loadRoom(roomCode: String) {
         viewModelScope.launch {
             val room = chatRepository.getRoom(roomCode) ?: return@launch
-            _isOwner.value = room.creatorUid == chatRepository.currentUid
-            _roomUsername.value = room.members[chatRepository.currentUid]
+            _uiState.update {
+                it.copy(
+                    isOwner = room.creatorUid == chatRepository.currentUid,
+                    roomUsername = room.members[chatRepository.currentUid]
+                )
+            }
         }
     }
 
     fun loadMessages(roomCode: String) {
         stopListening()
-        messagesListener = chatRepository.listenToMessages(
-            roomCode,
-            onMessagesChanged = { messageList -> _messages.value = messageList },
-            onError = { _error.value = "Could not load messages: ${it.message}" }
-        )
+        messagesJob = viewModelScope.launch {
+            chatRepository.observeMessages(roomCode)
+                .catch { e -> showError(e.toUserMessage("Could not load messages.")) }
+                .collect { messages -> _uiState.update { it.copy(messages = messages) } }
+        }
     }
 
     fun sendMessage(roomCode: String, messageText: String) {
-        val username = _roomUsername.value
+        val username = _uiState.value.roomUsername
         if (username == null) {
-            _error.value = "Still joining the room, try again in a moment"
+            showError("Still joining the room, try again in a moment")
             return
         }
         viewModelScope.launch {
             val result = chatRepository.sendMessage(roomCode, messageText.trim(), username)
-            if (result is Resource.Error) {
-                _error.value = result.message
-            }
+            if (result is Resource.Error) showError(result.message)
         }
     }
 
     fun clearError() {
-        _error.value = null
+        _uiState.update { it.copy(errorMessage = null) }
     }
 
     /** Closes the room, then leaves it. A temporary room is deleted when its creator leaves. */
@@ -75,7 +79,7 @@ class ChatViewModel @Inject constructor(
         viewModelScope.launch {
             val result = chatRepository.closeRoom(roomCode)
             if (result is Resource.Error) {
-                _error.value = result.message
+                showError(result.message)
                 return@launch
             }
             leaveRoomInternal(roomCode, onDone)
@@ -87,7 +91,7 @@ class ChatViewModel @Inject constructor(
             stopListening()
             val result = chatRepository.deleteRoom(roomCode)
             if (result is Resource.Error) {
-                _error.value = result.message
+                showError(result.message)
                 return@launch
             }
             onDone()
@@ -115,20 +119,20 @@ class ChatViewModel @Inject constructor(
     }
 
     private suspend fun updatePresenceInternal(roomCode: String, isPresent: Boolean) {
-        val username = _roomUsername.value
+        val username = _uiState.value.roomUsername
             ?: chatRepository.getRoom(roomCode)?.members?.get(chatRepository.currentUid)
             ?: return
         chatRepository.updateUserPresence(roomCode, username, isPresent)
     }
 
-    // Detach before the room can be deleted, otherwise the listener reports a permission error.
+    // Cancelling the collection detaches the Firestore listener before the room can be deleted,
+    // otherwise the listener reports a permission error.
     private fun stopListening() {
-        messagesListener?.remove()
-        messagesListener = null
+        messagesJob?.cancel()
+        messagesJob = null
     }
 
-    override fun onCleared() {
-        stopListening()
-        super.onCleared()
+    private fun showError(message: String) {
+        _uiState.update { it.copy(errorMessage = message) }
     }
 }

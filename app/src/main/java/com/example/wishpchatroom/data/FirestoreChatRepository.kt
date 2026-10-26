@@ -5,8 +5,10 @@ import com.google.firebase.firestore.CollectionReference
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.Query
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -20,19 +22,15 @@ class FirestoreChatRepository @Inject constructor(
 
     private fun roomRef(roomCode: String) = firestore.collection("rooms").document(roomCode)
 
-    /** Listens to the latest [MESSAGE_LIMIT] messages. The caller must remove the registration. */
-    override fun listenToMessages(
-        roomCode: String,
-        onMessagesChanged: (List<Message>) -> Unit,
-        onError: (Exception) -> Unit
-    ): ListenerRegistration {
-        return roomRef(roomCode)
+    /** Streams the latest [MESSAGE_LIMIT] messages; the listener lives as long as the flow is collected. */
+    override fun observeMessages(roomCode: String): Flow<List<Message>> = callbackFlow {
+        val registration = roomRef(roomCode)
             .collection("messages")
             .orderBy("timestamp", Query.Direction.DESCENDING)
             .limit(MESSAGE_LIMIT)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
-                    onError(error)
+                    close(error)
                     return@addSnapshotListener
                 }
                 if (snapshot != null) {
@@ -42,9 +40,10 @@ class FirestoreChatRepository @Inject constructor(
                             DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
                         )
                     }
-                    onMessagesChanged(messages.reversed())
+                    trySend(messages.reversed())
                 }
             }
+        awaitClose { registration.remove() }
     }
 
     override suspend fun getRoom(roomCode: String): Room? {
