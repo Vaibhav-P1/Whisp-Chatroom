@@ -8,11 +8,13 @@ import com.example.wishpchatroom.data.Resource
 import com.example.wishpchatroom.data.toUserMessage
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -22,9 +24,13 @@ data class ChatUiState(
     val isOwner: Boolean = false,
     // The username this user chose for the current room.
     val roomUsername: String? = null,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    // False once the server reported that nothing older exists than what is cached.
+    val hasMoreOlder: Boolean = true,
+    val isLoadingOlder: Boolean = false
 )
 
+@OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class ChatViewModel @Inject constructor(
     private val chatRepository: ChatRepository
@@ -36,6 +42,9 @@ class ChatViewModel @Inject constructor(
     private var messagesJob: Job? = null
     private var syncJob: Job? = null
     private var isLeaving = false
+
+    // How many of the newest cached messages are shown. Grows as the user scrolls back through history.
+    private val messageLimit = MutableStateFlow(MESSAGE_WINDOW)
 
     val currentUid: String? get() = chatRepository.currentUid
 
@@ -55,7 +64,8 @@ class ChatViewModel @Inject constructor(
         stopListening()
         // The UI reads the local cache; the sync job keeps that cache up to date from the server.
         messagesJob = viewModelScope.launch {
-            chatRepository.observeMessages(roomCode, MESSAGE_WINDOW)
+            messageLimit
+                .flatMapLatest { limit -> chatRepository.observeMessages(roomCode, limit) }
                 .catch { e -> showError(e.toUserMessage("Could not load messages.")) }
                 .collect { messages -> _uiState.update { it.copy(messages = messages) } }
         }
@@ -67,6 +77,39 @@ class ChatViewModel @Inject constructor(
             } catch (e: Exception) {
                 showError(e.toUserMessage("Could not load messages."))
             }
+        }
+    }
+
+    /** Called when the user scrolls to the top of the chat: reveals one more page of older messages. */
+    fun loadOlderMessages(roomCode: String) {
+        if (_uiState.value.isLoadingOlder) return
+
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoadingOlder = true) }
+            try {
+                when {
+                    // History already on the device: just show more of it, no network needed.
+                    chatRepository.hasCachedOlder(roomCode, messageLimit.value) -> showMoreCached()
+                    // Cache exhausted: ask the server, unless it already said there is nothing older.
+                    _uiState.value.hasMoreOlder -> fetchOlderFromServer(roomCode)
+                }
+            } finally {
+                _uiState.update { it.copy(isLoadingOlder = false) }
+            }
+        }
+    }
+
+    private fun showMoreCached() {
+        messageLimit.update { it + PAGE_SIZE }
+    }
+
+    private suspend fun fetchOlderFromServer(roomCode: String) {
+        when (val result = chatRepository.fetchOlderMessages(roomCode)) {
+            is Resource.Success -> {
+                showMoreCached()
+                _uiState.update { it.copy(hasMoreOlder = result.data) }
+            }
+            is Resource.Error -> showError(result.message)
         }
     }
 
@@ -168,6 +211,9 @@ class ChatViewModel @Inject constructor(
     private companion object {
         // How many of the newest cached messages the chat shows.
         const val MESSAGE_WINDOW = 100
+
+        // How many more messages are revealed each time the user scrolls back to the top.
+        const val PAGE_SIZE = 30
 
         // Must match the limit enforced in firestore.rules.
         const val MAX_MESSAGE_LENGTH = 2000

@@ -61,6 +61,21 @@ class OfflineFirstChatRepository @Inject constructor(
         return deliver(roomCode, messageId, message.username, message.messageText)
     }
 
+    override suspend fun hasCachedOlder(roomCode: String, shownCount: Int): Boolean =
+        messageDao.count(roomCode) > shownCount
+
+    override suspend fun fetchOlderMessages(roomCode: String): Resource<Boolean> {
+        val oldest = messageDao.oldestSentTimestamp(roomCode) ?: return Resource.Success(false)
+        return try {
+            val older = remote.fetchOlderMessages(roomCode, oldest, PAGE_SIZE)
+            messageDao.upsertAll(older.map { it.toEntity(roomCode) })
+            // The page always contains the message we started from, so a full page means more may follow.
+            Resource.Success(older.size >= PAGE_SIZE)
+        } catch (e: Exception) {
+            Resource.Error(e.toUserMessage("Could not load earlier messages."))
+        }
+    }
+
     override suspend fun getRoom(roomCode: String): Room? = remote.getRoom(roomCode)
 
     override suspend fun closeRoom(roomCode: String): Resource<Unit> = remote.closeRoom(roomCode)
@@ -109,5 +124,8 @@ class OfflineFirstChatRepository @Inject constructor(
     private companion object {
         // How many of the newest messages the server listener keeps in sync (also bounds Firestore reads).
         const val SYNC_WINDOW = 50L
+
+        // Messages fetched per request when scrolling back through history.
+        const val PAGE_SIZE = 30L
     }
 }

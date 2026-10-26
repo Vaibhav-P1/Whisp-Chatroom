@@ -7,6 +7,7 @@ import android.content.Intent
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -16,6 +17,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
@@ -34,6 +36,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -46,6 +49,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -114,6 +118,8 @@ fun ChatScreen(
         MessageList(
             messages = uiState.messages,
             currentUid = chatViewModel.currentUid,
+            isLoadingOlder = uiState.isLoadingOlder,
+            onLoadOlder = { chatViewModel.loadOlderMessages(roomCode) },
             onRetry = { messageId -> chatViewModel.retryMessage(roomCode, messageId) },
             modifier = Modifier.weight(1f)
         )
@@ -266,17 +272,27 @@ private fun ChatTopBar(
 private fun MessageList(
     messages: List<Message>,
     currentUid: String?,
+    isLoadingOlder: Boolean,
+    onLoadOlder: () -> Unit,
     onRetry: (messageId: String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val listState = rememberLazyListState()
 
-    // Items are: leading spacer, the messages, trailing spacer. Scrolling to the last item always
-    // reveals the end of the list, even when the newest message is taller than the screen.
-    LaunchedEffect(messages.size) {
-        if (messages.isNotEmpty()) {
+    // Items are: header, the messages, footer. Scroll to the end only when a new message arrives,
+    // not when older history is added above. Scrolling to the footer always reveals the end of the
+    // list, even when the newest message is taller than the screen.
+    val newestMessageId = messages.lastOrNull()?.id
+    LaunchedEffect(newestMessageId) {
+        if (newestMessageId != null) {
             listState.animateScrollToItem(messages.size + 1)
         }
+    }
+
+    // Reaching the top of the list reveals older history.
+    val isAtTop by remember { derivedStateOf { listState.firstVisibleItemIndex <= 1 } }
+    LaunchedEffect(isAtTop, messages.size) {
+        if (isAtTop && messages.isNotEmpty()) onLoadOlder()
     }
 
     LazyColumn(
@@ -284,7 +300,20 @@ private fun MessageList(
         state = listState,
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        item { Spacer(modifier = Modifier.height(8.dp)) }
+        item(key = "header") {
+            if (isLoadingOlder) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(8.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                }
+            } else {
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+        }
 
         items(messages, key = { it.id }) { message ->
             MessageCard(
@@ -294,7 +323,7 @@ private fun MessageList(
             )
         }
 
-        item { Spacer(modifier = Modifier.height(8.dp)) }
+        item(key = "footer") { Spacer(modifier = Modifier.height(8.dp)) }
     }
 }
 
