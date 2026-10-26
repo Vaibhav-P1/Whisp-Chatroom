@@ -374,7 +374,7 @@ class ChatViewModel @Inject constructor(
 
     /**
      * Follows the app lifecycle. While the chat is in the foreground a heartbeat refreshes the
-     * presence every minute (members count as offline when it stops), at a cost of one write a minute.
+     * presence every couple of minutes (members count as offline when it stops).
      */
     fun updateUserPresence(roomCode: String, isPresent: Boolean) {
         // Popping the screen fires lifecycle events after the room may already be deleted.
@@ -440,8 +440,11 @@ class ChatViewModel @Inject constructor(
         const val SEARCH_DEBOUNCE_MS = 250L
 
         // A foreground chat refreshes presence this often; a member is online if seen within the timeout.
-        const val HEARTBEAT_MS = 60_000L
-        const val ONLINE_TIMEOUT_MS = 150_000L
+        // Every heartbeat write is also one read for each other member's presence listener, so on the
+        // free Firestore tier the interval is kept long. Going to the background or leaving updates
+        // presence immediately, so the timeout only matters when the app is killed.
+        const val HEARTBEAT_MS = 120_000L
+        const val ONLINE_TIMEOUT_MS = 300_000L
         const val TICK_MS = 30_000L
     }
 }
