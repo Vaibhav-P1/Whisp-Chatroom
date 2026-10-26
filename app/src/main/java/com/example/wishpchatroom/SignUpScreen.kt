@@ -53,7 +53,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.wishpchatroom.data.Result
+import com.example.wishpchatroom.data.Resource
 import com.example.wishpchatroom.viewmodel.AuthViewModel
 
 @Composable
@@ -73,13 +73,13 @@ fun SignUpScreen(
 
     LaunchedEffect(authResult) {
         when (authResult) {
-            is com.example.wishpchatroom.data.Result.Success -> {
+            is com.example.wishpchatroom.data.Resource.Success -> {
                 isLoading = false
                 errorMessage = ""
             }
-            is com.example.wishpchatroom.data.Result.Error -> {
+            is com.example.wishpchatroom.data.Resource.Error -> {
                 isLoading = false
-                errorMessage = (authResult as Result.Error).exception.message ?: "Sign up failed"
+                errorMessage = (authResult as Resource.Error).message
             }
             null -> {
                 isLoading = false

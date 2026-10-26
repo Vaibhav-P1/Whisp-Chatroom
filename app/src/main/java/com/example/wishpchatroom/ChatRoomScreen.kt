@@ -36,7 +36,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.example.wishpchatroom.data.Result
+import com.example.wishpchatroom.data.Resource
 import com.example.wishpchatroom.viewmodel.AuthViewModel
 import com.example.wishpchatroom.viewmodel.RoomViewModel
 
@@ -64,15 +64,15 @@ fun ChatRoomScreen(
     LaunchedEffect(Unit) {
         roomViewModel.events.collect { result ->
             when (result) {
-                is Result.Success -> {
+                is Resource.Success -> {
                     if (useSavedUsername && username.isNotBlank()) {
                         sharedPref.edit().putString("default_username", username.trim()).apply()
                     }
                     errorMessage = ""
                     onJoinRoom(result.data)
                 }
-                is Result.Error -> {
-                    errorMessage = result.exception.message ?: "Operation failed"
+                is Resource.Error -> {
+                    errorMessage = result.message
                 }
             }
         }

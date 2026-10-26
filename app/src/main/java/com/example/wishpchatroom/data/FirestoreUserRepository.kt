@@ -11,7 +11,7 @@ class FirestoreUserRepository @Inject constructor(
     private val auth: FirebaseAuth,
     private val firestore: FirebaseFirestore
 ) : UserRepository {
-    override suspend fun signUp(email: String, password: String, firstName: String, lastName: String): Result<Boolean> =
+    override suspend fun signUp(email: String, password: String, firstName: String, lastName: String): Resource<Boolean> =
         try {
             val firebaseUser = auth.createUserWithEmailAndPassword(email, password).await().user
                 ?: throw IllegalStateException("Account was created but no user was returned")
@@ -24,17 +24,17 @@ class FirestoreUserRepository @Inject constructor(
                 firebaseUser.delete().await()
                 throw e
             }
-            Result.Success(true)
+            Resource.Success(true)
         } catch (e: Exception) {
-            Result.Error(e)
+            Resource.Error(e.toUserMessage("Sign up failed. Please try again."))
         }
 
-    override suspend fun login(email: String, password: String): Result<Boolean> =
+    override suspend fun login(email: String, password: String): Resource<Boolean> =
         try {
             auth.signInWithEmailAndPassword(email, password).await()
-            Result.Success(true)
+            Resource.Success(true)
         } catch (e: Exception) {
-            Result.Error(e)
+            Resource.Error(e.toUserMessage("Login failed. Please try again."))
         }
 
     override fun isLoggedIn(): Boolean = auth.currentUser != null

@@ -14,11 +14,11 @@ interface ChatRepository {
 
     suspend fun getRoom(roomCode: String): Room?
 
-    suspend fun sendMessage(roomCode: String, messageText: String, username: String): Result<Unit>
+    suspend fun sendMessage(roomCode: String, messageText: String, username: String): Resource<Unit>
 
-    suspend fun closeRoom(roomCode: String): Result<Unit>
+    suspend fun closeRoom(roomCode: String): Resource<Unit>
 
-    suspend fun deleteRoom(roomCode: String): Result<Unit>
+    suspend fun deleteRoom(roomCode: String): Resource<Unit>
 
     suspend fun updateUserPresence(roomCode: String, username: String, isPresent: Boolean)
 

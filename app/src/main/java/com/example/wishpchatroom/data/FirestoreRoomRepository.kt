@@ -14,10 +14,10 @@ class FirestoreRoomRepository @Inject constructor(
     private val firestore: FirebaseFirestore,
     private val auth: FirebaseAuth
 ) : RoomRepository {
-    override suspend fun createRoom(username: String, isTemporary: Boolean): Result<String> {
-        val uid = auth.currentUser?.uid ?: return Result.Error(Exception("You must be logged in"))
+    override suspend fun createRoom(username: String, isTemporary: Boolean): Resource<String> {
+        val uid = auth.currentUser?.uid ?: return Resource.Error("You must be logged in")
         val name = username.trim()
-        validateUsername(name)?.let { return Result.Error(Exception(it)) }
+        validateUsername(name)?.let { return Resource.Error(it) }
 
         return try {
             repeat(MAX_CODE_ATTEMPTS) {
@@ -44,18 +44,18 @@ class FirestoreRoomRepository @Inject constructor(
                     }
                 }.await()
 
-                if (created) return Result.Success(roomCode)
+                if (created) return Resource.Success(roomCode)
             }
-            Result.Error(Exception("Could not generate a unique room code. Please try again."))
+            Resource.Error("Could not generate a unique room code. Please try again.")
         } catch (e: Exception) {
-            Result.Error(e)
+            Resource.Error(e.toUserMessage("Could not create the room. Please try again."))
         }
     }
 
-    override suspend fun joinRoom(roomCode: String, username: String): Result<Boolean> {
-        val uid = auth.currentUser?.uid ?: return Result.Error(Exception("You must be logged in"))
+    override suspend fun joinRoom(roomCode: String, username: String): Resource<Boolean> {
+        val uid = auth.currentUser?.uid ?: return Resource.Error("You must be logged in")
         val name = username.trim()
-        validateUsername(name)?.let { return Result.Error(Exception(it)) }
+        validateUsername(name)?.let { return Resource.Error(it) }
 
         return try {
             val roomRef = firestore.collection("rooms").document(roomCode)
@@ -79,9 +79,9 @@ class FirestoreRoomRepository @Inject constructor(
                 }
             }.await()
 
-            if (failure != null) Result.Error(Exception(failure)) else Result.Success(true)
+            if (failure != null) Resource.Error(failure) else Resource.Success(true)
         } catch (e: Exception) {
-            Result.Error(e)
+            Resource.Error(e.toUserMessage("Could not join the room. Please try again."))
         }
     }
 

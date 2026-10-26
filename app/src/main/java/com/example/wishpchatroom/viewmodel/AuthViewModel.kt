@@ -4,7 +4,7 @@ import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.wishpchatroom.data.Result
+import com.example.wishpchatroom.data.Resource
 import com.example.wishpchatroom.data.User
 import com.example.wishpchatroom.data.UserRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -17,8 +17,8 @@ class AuthViewModel @Inject constructor(
 ) : ViewModel() {
 
     // Make these nullable by adding ?
-    private val _authResult = MutableLiveData<Result<Boolean>?>()
-    val authResult: LiveData<Result<Boolean>?> get() = _authResult
+    private val _authResult = MutableLiveData<Resource<Boolean>?>()
+    val authResult: LiveData<Resource<Boolean>?> get() = _authResult
 
     private val _currentUser = MutableLiveData<User?>()
     val currentUser: LiveData<User?> get() = _currentUser
@@ -46,7 +46,7 @@ class AuthViewModel @Inject constructor(
     fun signUp(email: String, password: String, firstName: String, lastName: String) {
         viewModelScope.launch {
             _authResult.value = userRepository.signUp(email, password, firstName, lastName)
-            if (_authResult.value is Result.Success) {
+            if (_authResult.value is Resource.Success) {
                 checkCurrentUser()
             }
         }
@@ -55,7 +55,7 @@ class AuthViewModel @Inject constructor(
     fun login(email: String, password: String) {
         viewModelScope.launch {
             _authResult.value = userRepository.login(email, password)
-            if (_authResult.value is Result.Success) {
+            if (_authResult.value is Resource.Success) {
                 checkCurrentUser()
             }
         }

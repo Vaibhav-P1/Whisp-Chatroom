@@ -65,7 +65,7 @@ fun NavigationGraph(
 
     LaunchedEffect(authResult) {
         authResult?.let { result ->
-            if (result is com.example.wishpchatroom.data.Result.Success) {
+            if (result is com.example.wishpchatroom.data.Resource.Success) {
                 navController.navigate(Screen.ChatRoomsScreen.route) {
                     popUpTo(Screen.SignupScreen.route) { inclusive = true }
                     popUpTo(Screen.LoginScreen.route) { inclusive = true }

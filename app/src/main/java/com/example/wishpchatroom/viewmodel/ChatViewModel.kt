@@ -6,7 +6,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.wishpchatroom.data.ChatRepository
 import com.example.wishpchatroom.data.Message
-import com.example.wishpchatroom.data.Result
+import com.example.wishpchatroom.data.Resource
 import com.google.firebase.firestore.ListenerRegistration
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.launch
@@ -60,8 +60,8 @@ class ChatViewModel @Inject constructor(
         }
         viewModelScope.launch {
             val result = chatRepository.sendMessage(roomCode, messageText.trim(), username)
-            if (result is Result.Error) {
-                _error.value = result.exception.message
+            if (result is Resource.Error) {
+                _error.value = result.message
             }
         }
     }
@@ -74,8 +74,8 @@ class ChatViewModel @Inject constructor(
     fun closeRoom(roomCode: String, onDone: () -> Unit) {
         viewModelScope.launch {
             val result = chatRepository.closeRoom(roomCode)
-            if (result is Result.Error) {
-                _error.value = "Could not close the room: ${result.exception.message}"
+            if (result is Resource.Error) {
+                _error.value = result.message
                 return@launch
             }
             leaveRoomInternal(roomCode, onDone)
@@ -86,8 +86,8 @@ class ChatViewModel @Inject constructor(
         viewModelScope.launch {
             stopListening()
             val result = chatRepository.deleteRoom(roomCode)
-            if (result is Result.Error) {
-                _error.value = "Could not delete the room: ${result.exception.message}"
+            if (result is Resource.Error) {
+                _error.value = result.message
                 return@launch
             }
             onDone()

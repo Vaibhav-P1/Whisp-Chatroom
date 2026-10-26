@@ -55,8 +55,8 @@ class FirestoreChatRepository @Inject constructor(
         }
     }
 
-    override suspend fun sendMessage(roomCode: String, messageText: String, username: String): Result<Unit> {
-        val uid = currentUid ?: return Result.Error(Exception("You must be logged in"))
+    override suspend fun sendMessage(roomCode: String, messageText: String, username: String): Resource<Unit> {
+        val uid = currentUid ?: return Resource.Error("You must be logged in")
         return try {
             // Membership and "room is open" are enforced by the security rules.
             roomRef(roomCode).collection("messages").add(
@@ -67,30 +67,30 @@ class FirestoreChatRepository @Inject constructor(
                     "timestamp" to FieldValue.serverTimestamp()
                 )
             ).await()
-            Result.Success(Unit)
+            Resource.Success(Unit)
         } catch (e: Exception) {
-            Result.Error(Exception("Message not sent. The room may be closed.", e))
+            Resource.Error("Message not sent. The room may be closed.")
         }
     }
 
-    override suspend fun closeRoom(roomCode: String): Result<Unit> {
+    override suspend fun closeRoom(roomCode: String): Resource<Unit> {
         return try {
             roomRef(roomCode).update("roomOpen", false).await()
-            Result.Success(Unit)
+            Resource.Success(Unit)
         } catch (e: Exception) {
-            Result.Error(e)
+            Resource.Error(e.toUserMessage("Could not close the room."))
         }
     }
 
-    override suspend fun deleteRoom(roomCode: String): Result<Unit> {
+    override suspend fun deleteRoom(roomCode: String): Resource<Unit> {
         return try {
             val room = roomRef(roomCode)
             deleteCollection(room.collection("messages"))
             deleteCollection(room.collection("presence"))
             room.delete().await()
-            Result.Success(Unit)
+            Resource.Success(Unit)
         } catch (e: Exception) {
-            Result.Error(e)
+            Resource.Error(e.toUserMessage("Could not delete the room."))
         }
     }
 
