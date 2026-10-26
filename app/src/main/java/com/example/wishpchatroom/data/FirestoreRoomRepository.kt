@@ -22,7 +22,7 @@ class FirestoreRoomRepository @Inject constructor(
         return try {
             repeat(MAX_CODE_ATTEMPTS) {
                 val roomCode = generateRoomCode()
-                val roomRef = firestore.collection("rooms").document(roomCode)
+                val roomRef = firestore.collection(FirestoreCollections.ROOMS).document(roomCode)
 
                 // Never overwrite an existing room that happens to share the generated code.
                 val created = firestore.runTransaction { transaction ->
@@ -58,7 +58,7 @@ class FirestoreRoomRepository @Inject constructor(
         validateUsername(name)?.let { return Resource.Error(it) }
 
         return try {
-            val roomRef = firestore.collection("rooms").document(roomCode)
+            val roomRef = firestore.collection(FirestoreCollections.ROOMS).document(roomCode)
 
             // The username check and the write happen in one transaction so two people
             // joining at the same time cannot claim the same name.

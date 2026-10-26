@@ -20,12 +20,12 @@ class FirestoreChatRepository @Inject constructor(
 ) : ChatRepository {
     override val currentUid: String? get() = auth.currentUser?.uid
 
-    private fun roomRef(roomCode: String) = firestore.collection("rooms").document(roomCode)
+    private fun roomRef(roomCode: String) = firestore.collection(FirestoreCollections.ROOMS).document(roomCode)
 
     /** Streams the latest [MESSAGE_LIMIT] messages; the listener lives as long as the flow is collected. */
     override fun observeMessages(roomCode: String): Flow<List<Message>> = callbackFlow {
         val registration = roomRef(roomCode)
-            .collection("messages")
+            .collection(FirestoreCollections.MESSAGES)
             .orderBy("timestamp", Query.Direction.DESCENDING)
             .limit(MESSAGE_LIMIT)
             .addSnapshotListener { snapshot, error ->
@@ -58,7 +58,7 @@ class FirestoreChatRepository @Inject constructor(
         val uid = currentUid ?: return Resource.Error("You must be logged in")
         return try {
             // Membership and "room is open" are enforced by the security rules.
-            roomRef(roomCode).collection("messages").add(
+            roomRef(roomCode).collection(FirestoreCollections.MESSAGES).add(
                 mapOf(
                     "uid" to uid,
                     "username" to username,
@@ -84,8 +84,8 @@ class FirestoreChatRepository @Inject constructor(
     override suspend fun deleteRoom(roomCode: String): Resource<Unit> {
         return try {
             val room = roomRef(roomCode)
-            deleteCollection(room.collection("messages"))
-            deleteCollection(room.collection("presence"))
+            deleteCollection(room.collection(FirestoreCollections.MESSAGES))
+            deleteCollection(room.collection(FirestoreCollections.PRESENCE))
             room.delete().await()
             Resource.Success(Unit)
         } catch (e: Exception) {
@@ -96,7 +96,7 @@ class FirestoreChatRepository @Inject constructor(
     override suspend fun updateUserPresence(roomCode: String, username: String, isPresent: Boolean) {
         val uid = currentUid ?: return
         try {
-            roomRef(roomCode).collection("presence").document(uid).set(
+            roomRef(roomCode).collection(FirestoreCollections.PRESENCE).document(uid).set(
                 mapOf(
                     "username" to username,
                     "isPresent" to isPresent,

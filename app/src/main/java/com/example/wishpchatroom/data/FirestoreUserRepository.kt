@@ -42,7 +42,7 @@ class FirestoreUserRepository @Inject constructor(
     override suspend fun getCurrentUser(): User? {
         val currentUser = auth.currentUser ?: return null
         return try {
-            val userDoc = firestore.collection("users").document(currentUser.uid).get().await()
+            val userDoc = firestore.collection(FirestoreCollections.USERS).document(currentUser.uid).get().await()
             userDoc.toObject(User::class.java)
                 ?: createFallbackProfile(currentUser.uid, currentUser.email.orEmpty())
         } catch (e: Exception) {
@@ -62,6 +62,6 @@ class FirestoreUserRepository @Inject constructor(
     }
 
     private suspend fun saveUserToFirestore(uid: String, user: User) {
-        firestore.collection("users").document(uid).set(user).await()
+        firestore.collection(FirestoreCollections.USERS).document(uid).set(user).await()
     }
 }

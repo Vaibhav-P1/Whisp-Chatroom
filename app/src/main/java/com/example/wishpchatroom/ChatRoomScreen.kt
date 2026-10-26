@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.wishpchatroom.data.User
+import com.example.wishpchatroom.data.UserPrefs
 import com.example.wishpchatroom.ui.components.ErrorCard
 import com.example.wishpchatroom.viewmodel.AuthViewModel
 import com.example.wishpchatroom.viewmodel.RoomViewModel
@@ -49,10 +50,10 @@ fun ChatRoomScreen(
 ) {
     val roomViewModel: RoomViewModel = hiltViewModel()
     val context = LocalContext.current
-    val sharedPref = context.getSharedPreferences("user_prefs", Context.MODE_PRIVATE)
+    val sharedPref = context.getSharedPreferences(UserPrefs.FILE_NAME, Context.MODE_PRIVATE)
 
     var roomCode by remember { mutableStateOf("") }
-    var username by remember { mutableStateOf(sharedPref.getString("default_username", "") ?: "") }
+    var username by remember { mutableStateOf(sharedPref.getString(UserPrefs.KEY_DEFAULT_USERNAME, "") ?: "") }
     var isCreateMode by remember { mutableStateOf(true) }
     var isTemporary by remember { mutableStateOf(false) }
     var useSavedUsername by remember { mutableStateOf(false) }
@@ -64,7 +65,7 @@ fun ChatRoomScreen(
     LaunchedEffect(Unit) {
         roomViewModel.roomEntered.collect { enteredRoomCode ->
             if (useSavedUsername && username.isNotBlank()) {
-                sharedPref.edit().putString("default_username", username.trim()).apply()
+                sharedPref.edit().putString(UserPrefs.KEY_DEFAULT_USERNAME, username.trim()).apply()
             }
             onJoinRoom(enteredRoomCode)
         }
@@ -102,7 +103,7 @@ fun ChatRoomScreen(
             onUseSavedUsernameChange = {
                 useSavedUsername = it
                 if (it && username.isBlank()) {
-                    username = sharedPref.getString("default_username", "") ?: ""
+                    username = sharedPref.getString(UserPrefs.KEY_DEFAULT_USERNAME, "") ?: ""
                 }
             },
             isCreateMode = isCreateMode,
