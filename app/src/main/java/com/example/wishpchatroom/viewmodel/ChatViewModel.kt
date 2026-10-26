@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.wishpchatroom.data.ChatRepository
 import com.example.wishpchatroom.data.Message
 import com.example.wishpchatroom.data.Presence
+import com.example.wishpchatroom.data.ReplyRef
 import com.example.wishpchatroom.data.Resource
 import com.example.wishpchatroom.data.Room
 import com.example.wishpchatroom.data.toUserMessage
@@ -46,7 +47,10 @@ data class ChatUiState(
     val hasMoreOlder: Boolean = true,
     val isLoadingOlder: Boolean = false,
     val roomStatus: RoomStatus = RoomStatus.OPEN,
-    val members: List<Member> = emptyList()
+    val members: List<Member> = emptyList(),
+    // What the message box is currently doing besides sending a plain message (at most one of them).
+    val replyingTo: Message? = null,
+    val editing: Message? = null
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -181,7 +185,11 @@ class ChatViewModel @Inject constructor(
         }
     }
 
-    /** Returns false if the message was not accepted, so the caller can keep what the user typed. */
+    /**
+     * Sends the text as a new message, as a reply, or as an edit of an existing message, depending on
+     * what the message box is doing. Returns false if it was not accepted, so the caller can keep
+     * what the user typed.
+     */
     fun sendMessage(roomCode: String, messageText: String): Boolean {
         val username = _uiState.value.roomUsername
         if (username == null) {
@@ -193,11 +201,56 @@ class ChatViewModel @Inject constructor(
             showError("Message is too long (max $MAX_MESSAGE_LENGTH characters)")
             return false
         }
+
+        val state = _uiState.value
+        val editing = state.editing
+        if (editing != null) {
+            _uiState.update { it.copy(editing = null) }
+            // Saving an unchanged message is not an edit.
+            if (text != editing.messageText) {
+                viewModelScope.launch {
+                    val result = chatRepository.editMessage(roomCode, editing.id, text)
+                    if (result is Resource.Error) showError(result.message)
+                }
+            }
+            return true
+        }
+
+        val replyTo = state.replyingTo?.let { quoted ->
+            ReplyRef(quoted.id, quoted.username, quoted.messageText.take(REPLY_SNIPPET_LENGTH))
+        }
+        _uiState.update { it.copy(replyingTo = null) }
         viewModelScope.launch {
-            val result = chatRepository.sendMessage(roomCode, text, username)
+            val result = chatRepository.sendMessage(roomCode, text, username, replyTo)
             if (result is Resource.Error) showError(result.message)
         }
         return true
+    }
+
+    fun startReply(message: Message) {
+        _uiState.update { it.copy(replyingTo = message, editing = null) }
+    }
+
+    fun startEdit(message: Message) {
+        _uiState.update { it.copy(editing = message, replyingTo = null) }
+    }
+
+    fun cancelComposerMode() {
+        _uiState.update { it.copy(replyingTo = null, editing = null) }
+    }
+
+    fun deleteMessage(roomCode: String, messageId: String) {
+        viewModelScope.launch {
+            val result = chatRepository.deleteMessage(roomCode, messageId)
+            if (result is Resource.Error) showError(result.message)
+        }
+    }
+
+    fun toggleReaction(roomCode: String, messageId: String, emoji: String) {
+        viewModelScope.launch {
+            val result = chatRepository.toggleReaction(roomCode, messageId, emoji)
+            if (result is Resource.Error) showError(result.message)
+        }
     }
 
     /** Sends a message that failed earlier. It keeps its id, so it cannot be delivered twice. */
@@ -341,6 +394,9 @@ class ChatViewModel @Inject constructor(
 
         // Must match the limit enforced in firestore.rules.
         const val MAX_MESSAGE_LENGTH = 2000
+
+        // How much of the quoted message is stored with a reply (the rules allow up to 200).
+        const val REPLY_SNIPPET_LENGTH = 100
 
         // A foreground chat refreshes presence this often; a member is online if seen within the timeout.
         const val HEARTBEAT_MS = 60_000L

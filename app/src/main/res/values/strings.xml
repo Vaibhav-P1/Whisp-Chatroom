@@ -59,6 +59,15 @@
     <string name="delete">Delete</string>
     <string name="cancel">Cancel</string>
     <string name="message_hint">Type a message...</string>
+    <string name="reply">Reply</string>
+    <string name="copy_text">Copy text</string>
+    <string name="edit_message">Edit message</string>
+    <string name="delete_message">Delete message</string>
+    <string name="delete_message_text">This removes the message for everyone in the room. This cannot be undone.</string>
+    <string name="message_deleted">This message was deleted</string>
+    <string name="message_edited">%1$s · edited</string>
+    <string name="replying_to">Replying to %1$s</string>
+    <string name="editing_message">Editing message</string>
     <string name="message_sending">Sending…</string>
     <string name="message_failed_retry">Not sent. Tap to retry</string>
     <string name="send">Send</string>
