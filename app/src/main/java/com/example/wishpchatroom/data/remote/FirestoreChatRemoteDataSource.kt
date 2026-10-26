@@ -1,5 +1,10 @@
-package com.example.wishpchatroom.data
+package com.example.wishpchatroom.data.remote
 
+import com.example.wishpchatroom.data.FirestoreCollections
+import com.example.wishpchatroom.data.Resource
+import com.example.wishpchatroom.data.Room
+import com.example.wishpchatroom.data.toUserMessage
+import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.CollectionReference
 import com.google.firebase.firestore.DocumentSnapshot
@@ -10,55 +15,61 @@ import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.tasks.await
+import java.util.Date
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
-class FirestoreChatRepository @Inject constructor(
+class FirestoreChatRemoteDataSource @Inject constructor(
     private val firestore: FirebaseFirestore,
     private val auth: FirebaseAuth
-) : ChatRepository {
+) : ChatRemoteDataSource {
     override val currentUid: String? get() = auth.currentUser?.uid
 
     private fun roomRef(roomCode: String) = firestore.collection(FirestoreCollections.ROOMS).document(roomCode)
 
-    /** Streams the latest [MESSAGE_LIMIT] messages; the listener lives as long as the flow is collected. */
-    override fun observeMessages(roomCode: String): Flow<List<Message>> = callbackFlow {
-        val registration = roomRef(roomCode)
-            .collection(FirestoreCollections.MESSAGES)
+    private fun messagesRef(roomCode: String) = roomRef(roomCode).collection(FirestoreCollections.MESSAGES)
+
+    override fun observeLatestMessages(roomCode: String, limit: Long): Flow<List<RemoteMessage>> = callbackFlow {
+        val registration = messagesRef(roomCode)
             .orderBy("timestamp", Query.Direction.DESCENDING)
-            .limit(MESSAGE_LIMIT)
+            .limit(limit)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
                     close(error)
                     return@addSnapshotListener
                 }
                 if (snapshot != null) {
-                    val messages = snapshot.documents.mapNotNull { doc ->
-                        doc.toObject(
-                            Message::class.java,
-                            DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
-                        )
-                    }
-                    trySend(messages.reversed())
+                    trySend(snapshot.documents.mapNotNull { it.toRemoteMessage() })
                 }
             }
         awaitClose { registration.remove() }
     }
 
-    override suspend fun getRoom(roomCode: String): Room? {
-        return try {
-            roomRef(roomCode).get().await().toObject(Room::class.java)
-        } catch (e: Exception) {
-            null
-        }
+    override suspend fun fetchOlderMessages(
+        roomCode: String,
+        beforeTimestamp: Long,
+        limit: Long
+    ): List<RemoteMessage> {
+        val snapshot = messagesRef(roomCode)
+            .orderBy("timestamp", Query.Direction.DESCENDING)
+            .whereLessThanOrEqualTo("timestamp", Timestamp(Date(beforeTimestamp)))
+            .limit(limit)
+            .get()
+            .await()
+        return snapshot.documents.mapNotNull { it.toRemoteMessage() }
     }
 
-    override suspend fun sendMessage(roomCode: String, messageText: String, username: String): Resource<Unit> {
+    override suspend fun sendMessage(
+        roomCode: String,
+        id: String,
+        username: String,
+        messageText: String
+    ): Resource<Unit> {
         val uid = currentUid ?: return Resource.Error("You must be logged in")
         return try {
             // Membership and "room is open" are enforced by the security rules.
-            roomRef(roomCode).collection(FirestoreCollections.MESSAGES).add(
+            messagesRef(roomCode).document(id).set(
                 mapOf(
                     "uid" to uid,
                     "username" to username,
@@ -68,7 +79,21 @@ class FirestoreChatRepository @Inject constructor(
             ).await()
             Resource.Success(Unit)
         } catch (e: Exception) {
-            Resource.Error("Message not sent. The room may be closed.")
+            // A retry of a write that did reach the server is rejected (messages cannot be
+            // overwritten), so a message that already exists counts as delivered.
+            if (messageExists(roomCode, id)) {
+                Resource.Success(Unit)
+            } else {
+                Resource.Error("Message not sent. The room may be closed.")
+            }
+        }
+    }
+
+    override suspend fun getRoom(roomCode: String): Room? {
+        return try {
+            roomRef(roomCode).get().await().toObject(Room::class.java)
+        } catch (e: Exception) {
+            null
         }
     }
 
@@ -108,12 +133,11 @@ class FirestoreChatRepository @Inject constructor(
         }
     }
 
-    /** Deletes the room only if it is temporary and the current user created it. */
-    override suspend fun deleteIfTemporaryOwner(roomCode: String) {
-        val uid = currentUid ?: return
-        val room = getRoom(roomCode) ?: return
-        if (room.temporary && room.creatorUid == uid) {
-            deleteRoom(roomCode)
+    private suspend fun messageExists(roomCode: String, id: String): Boolean {
+        return try {
+            messagesRef(roomCode).document(id).get().await().exists()
+        } catch (e: Exception) {
+            false
         }
     }
 
@@ -129,8 +153,20 @@ class FirestoreChatRepository @Inject constructor(
         }
     }
 
+    private fun DocumentSnapshot.toRemoteMessage(): RemoteMessage? {
+        val uid = getString("uid") ?: return null
+        val timestamp = getTimestamp("timestamp", DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+        return RemoteMessage(
+            id = id,
+            uid = uid,
+            username = getString("username").orEmpty(),
+            messageText = getString("messageText").orEmpty(),
+            timestamp = timestamp?.toDate()?.time ?: System.currentTimeMillis(),
+            hasPendingWrites = metadata.hasPendingWrites()
+        )
+    }
+
     private companion object {
-        const val MESSAGE_LIMIT = 100L
         const val DELETE_BATCH_SIZE = 400L
     }
 }

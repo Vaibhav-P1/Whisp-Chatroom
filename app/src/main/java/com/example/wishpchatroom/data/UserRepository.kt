@@ -10,4 +10,7 @@ interface UserRepository {
     suspend fun getCurrentUser(): User?
 
     fun logout()
+
+    /** Removes locally cached data (such as chat history) so the next user on this device never sees it. */
+    suspend fun clearLocalData()
 }

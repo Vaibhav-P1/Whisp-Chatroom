@@ -1,15 +1,19 @@
 package com.example.wishpchatroom.data
 
+import com.example.wishpchatroom.data.local.AppDatabase
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
 class FirestoreUserRepository @Inject constructor(
     private val auth: FirebaseAuth,
-    private val firestore: FirebaseFirestore
+    private val firestore: FirebaseFirestore,
+    private val database: AppDatabase
 ) : UserRepository {
     override suspend fun signUp(email: String, password: String, firstName: String, lastName: String): Resource<Boolean> =
         try {
@@ -52,6 +56,10 @@ class FirestoreUserRepository @Inject constructor(
 
     override fun logout() {
         auth.signOut()
+    }
+
+    override suspend fun clearLocalData() {
+        withContext(Dispatchers.IO) { database.clearAllTables() }
     }
 
     // Accounts created before profiles were keyed by uid have no profile document yet.

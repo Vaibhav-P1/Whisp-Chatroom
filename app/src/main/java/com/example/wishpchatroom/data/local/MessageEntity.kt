@@ -3,9 +3,8 @@ package com.example.wishpchatroom.data.local
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
-
-/** Delivery state of a message in the local cache. */
-enum class MessageStatus { SENDING, SENT, FAILED }
+import com.example.wishpchatroom.data.Message
+import com.example.wishpchatroom.data.MessageStatus
 
 /**
  * A chat message cached on the device. The cache is the single source of truth for the UI:
@@ -26,4 +25,13 @@ data class MessageEntity(
     // Epoch millis. A local estimate while sending, the server time once synced.
     val timestamp: Long,
     val status: MessageStatus
+)
+
+fun MessageEntity.toDomain() = Message(
+    id = id,
+    uid = uid,
+    username = username,
+    messageText = messageText,
+    timestamp = timestamp,
+    status = status
 )

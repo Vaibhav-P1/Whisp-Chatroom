@@ -5,6 +5,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -59,8 +60,10 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.wishpchatroom.data.Message
+import com.example.wishpchatroom.data.MessageStatus
 import com.example.wishpchatroom.viewmodel.ChatViewModel
 import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 
 @Composable
@@ -111,6 +114,7 @@ fun ChatScreen(
         MessageList(
             messages = uiState.messages,
             currentUid = chatViewModel.currentUid,
+            onRetry = { messageId -> chatViewModel.retryMessage(roomCode, messageId) },
             modifier = Modifier.weight(1f)
         )
 
@@ -263,6 +267,7 @@ private fun ChatTopBar(
 private fun MessageList(
     messages: List<Message>,
     currentUid: String?,
+    onRetry: (messageId: String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val listState = rememberLazyListState()
@@ -283,7 +288,8 @@ private fun MessageList(
         items(messages, key = { it.id }) { message ->
             MessageCard(
                 message = message,
-                isCurrentUser = message.uid == currentUid
+                isCurrentUser = message.uid == currentUid,
+                onRetry = { onRetry(message.id) }
             )
         }
 
@@ -337,9 +343,11 @@ private fun MessageInput(
 @Composable
 fun MessageCard(
     message: Message,
-    isCurrentUser: Boolean
+    isCurrentUser: Boolean,
+    onRetry: () -> Unit
 ) {
     val timeFormat = remember { SimpleDateFormat("HH:mm", Locale.getDefault()) }
+    val isFailed = message.status == MessageStatus.FAILED
 
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -348,7 +356,8 @@ fun MessageCard(
         Card(
             modifier = Modifier
                 .padding(horizontal = 8.dp)
-                .widthIn(max = 280.dp),
+                .widthIn(max = 280.dp)
+                .then(if (isFailed) Modifier.clickable(onClick = onRetry) else Modifier),
             colors = CardDefaults.cardColors(
                 containerColor = if (isCurrentUser) {
                     MaterialTheme.colorScheme.primary
@@ -387,12 +396,16 @@ fun MessageCard(
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = message.timestamp?.let { timeFormat.format(it) } ?: "",
+                    text = when (message.status) {
+                        MessageStatus.SENDING -> stringResource(R.string.message_sending)
+                        MessageStatus.FAILED -> stringResource(R.string.message_failed_retry)
+                        MessageStatus.SENT -> timeFormat.format(Date(message.timestamp))
+                    },
                     fontSize = 10.sp,
-                    color = if (isCurrentUser) {
-                        MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.7f)
-                    } else {
-                        MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
+                    color = when {
+                        isFailed -> MaterialTheme.colorScheme.errorContainer
+                        isCurrentUser -> MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.7f)
+                        else -> MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
                     }
                 )
             }

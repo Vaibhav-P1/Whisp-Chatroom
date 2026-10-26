@@ -7,6 +7,7 @@ import com.example.wishpchatroom.data.Message
 import com.example.wishpchatroom.data.Resource
 import com.example.wishpchatroom.data.toUserMessage
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -33,6 +34,7 @@ class ChatViewModel @Inject constructor(
     val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
 
     private var messagesJob: Job? = null
+    private var syncJob: Job? = null
     private var isLeaving = false
 
     val currentUid: String? get() = chatRepository.currentUid
@@ -51,10 +53,20 @@ class ChatViewModel @Inject constructor(
 
     fun loadMessages(roomCode: String) {
         stopListening()
+        // The UI reads the local cache; the sync job keeps that cache up to date from the server.
         messagesJob = viewModelScope.launch {
-            chatRepository.observeMessages(roomCode)
+            chatRepository.observeMessages(roomCode, MESSAGE_WINDOW)
                 .catch { e -> showError(e.toUserMessage("Could not load messages.")) }
                 .collect { messages -> _uiState.update { it.copy(messages = messages) } }
+        }
+        syncJob = viewModelScope.launch {
+            try {
+                chatRepository.syncMessages(roomCode)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                showError(e.toUserMessage("Could not load messages."))
+            }
         }
     }
 
@@ -66,6 +78,14 @@ class ChatViewModel @Inject constructor(
         }
         viewModelScope.launch {
             val result = chatRepository.sendMessage(roomCode, messageText.trim(), username)
+            if (result is Resource.Error) showError(result.message)
+        }
+    }
+
+    /** Sends a message that failed earlier. It keeps its id, so it cannot be delivered twice. */
+    fun retryMessage(roomCode: String, messageId: String) {
+        viewModelScope.launch {
+            val result = chatRepository.retryMessage(roomCode, messageId)
             if (result is Resource.Error) showError(result.message)
         }
     }
@@ -125,14 +145,21 @@ class ChatViewModel @Inject constructor(
         chatRepository.updateUserPresence(roomCode, username, isPresent)
     }
 
-    // Cancelling the collection detaches the Firestore listener before the room can be deleted,
+    // Cancelling the sync detaches the Firestore listener before the room can be deleted,
     // otherwise the listener reports a permission error.
     private fun stopListening() {
         messagesJob?.cancel()
+        syncJob?.cancel()
         messagesJob = null
+        syncJob = null
     }
 
     private fun showError(message: String) {
         _uiState.update { it.copy(errorMessage = message) }
+    }
+
+    private companion object {
+        // How many of the newest cached messages the chat shows.
+        const val MESSAGE_WINDOW = 100
     }
 }

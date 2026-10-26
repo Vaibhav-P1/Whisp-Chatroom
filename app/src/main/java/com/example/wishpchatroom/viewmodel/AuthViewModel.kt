@@ -57,6 +57,7 @@ class AuthViewModel @Inject constructor(
     fun logout() {
         userRepository.logout()
         _uiState.value = AuthUiState()
+        viewModelScope.launch { userRepository.clearLocalData() }
     }
 
     private fun authenticate(action: suspend () -> Resource<Boolean>) {

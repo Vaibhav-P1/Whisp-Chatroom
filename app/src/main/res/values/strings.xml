@@ -44,5 +44,7 @@
     <string name="delete">Delete</string>
     <string name="cancel">Cancel</string>
     <string name="message_hint">Type a message...</string>
+    <string name="message_sending">Sending…</string>
+    <string name="message_failed_retry">Not sent. Tap to retry</string>
     <string name="send">Send</string>
 </resources>

@@ -3,6 +3,7 @@ package com.example.wishpchatroom.data.local
 import androidx.room.Dao
 import androidx.room.Query
 import androidx.room.Upsert
+import com.example.wishpchatroom.data.MessageStatus
 import kotlinx.coroutines.flow.Flow
 
 @Dao
