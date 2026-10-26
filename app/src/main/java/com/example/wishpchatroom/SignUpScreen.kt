@@ -37,7 +37,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -53,7 +52,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.wishpchatroom.data.Resource
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.wishpchatroom.viewmodel.AuthViewModel
 
 @Composable
@@ -65,27 +64,14 @@ fun SignUpScreen(
     var password by remember { mutableStateOf("") }
     var firstName by remember { mutableStateOf("") }
     var lastName by remember { mutableStateOf("") }
-    var isLoading by remember { mutableStateOf(false) }
-    var errorMessage by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
 
-    val authResult by authViewModel.authResult.observeAsState()
+    val uiState by authViewModel.uiState.collectAsStateWithLifecycle()
+    val isLoading = uiState.isLoading
+    val errorMessage = uiState.errorMessage
 
-    LaunchedEffect(authResult) {
-        when (authResult) {
-            is com.example.wishpchatroom.data.Resource.Success -> {
-                isLoading = false
-                errorMessage = ""
-            }
-            is com.example.wishpchatroom.data.Resource.Error -> {
-                isLoading = false
-                errorMessage = (authResult as Resource.Error).message
-            }
-            null -> {
-                isLoading = false
-            }
-        }
-    }
+    // Do not show an error left over from the other auth screen.
+    LaunchedEffect(Unit) { authViewModel.clearError() }
 
     Box(
         modifier = Modifier
@@ -282,7 +268,7 @@ fun SignUpScreen(
                     )
 
                     // Error Message
-                    if (errorMessage.isNotEmpty()) {
+                    if (errorMessage != null) {
                         Card(
                             modifier = Modifier.fillMaxWidth(),
                             colors = CardDefaults.cardColors(
@@ -306,7 +292,6 @@ fun SignUpScreen(
                         onClick = {
                             if (firstName.isNotBlank() && lastName.isNotBlank() &&
                                 email.isNotBlank() && password.isNotBlank()) {
-                                isLoading = true
                                 authViewModel.signUp(email, password, firstName, lastName)
                             }
                         },

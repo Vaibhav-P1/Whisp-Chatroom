@@ -56,22 +56,16 @@ fun NavigationGraph(
     navController: NavHostController,
     authViewModel: AuthViewModel
 ) {
-    val authResult by authViewModel.authResult.observeAsState()
-
     // Decided once, synchronously, so a logged-in user never sees the signup screen on cold start.
     val startDestination = remember {
         if (authViewModel.isLoggedIn()) Screen.ChatRoomsScreen.route else Screen.SignupScreen.route
     }
 
-    LaunchedEffect(authResult) {
-        authResult?.let { result ->
-            if (result is com.example.wishpchatroom.data.Resource.Success) {
-                navController.navigate(Screen.ChatRoomsScreen.route) {
-                    popUpTo(Screen.SignupScreen.route) { inclusive = true }
-                    popUpTo(Screen.LoginScreen.route) { inclusive = true }
-                }
-                // Handled: do not replay this navigation after rotation.
-                authViewModel.consumeAuthResult()
+    LaunchedEffect(Unit) {
+        authViewModel.authenticated.collect {
+            navController.navigate(Screen.ChatRoomsScreen.route) {
+                popUpTo(Screen.SignupScreen.route) { inclusive = true }
+                popUpTo(Screen.LoginScreen.route) { inclusive = true }
             }
         }
     }

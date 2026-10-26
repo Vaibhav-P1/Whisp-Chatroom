@@ -35,6 +35,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.wishpchatroom.data.Resource
 import com.example.wishpchatroom.viewmodel.AuthViewModel
@@ -58,7 +59,7 @@ fun ChatRoomScreen(
     var errorMessage by remember { mutableStateOf("") }
 
     val isLoading by roomViewModel.isLoading.observeAsState(false)
-    val currentUser by authViewModel.currentUser.observeAsState()
+    val authState by authViewModel.uiState.collectAsStateWithLifecycle()
 
     // Each create/join result arrives exactly once, so navigation cannot fire twice.
     LaunchedEffect(Unit) {
@@ -270,7 +271,7 @@ fun ChatRoomScreen(
                 modifier = Modifier.padding(16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                currentUser?.let { user ->
+                authState.currentUser?.let { user ->
                     Text(
                         text = "Logged in as:",
                         style = MaterialTheme.typography.bodySmall,
