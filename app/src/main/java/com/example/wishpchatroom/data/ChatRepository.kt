@@ -1,7 +1,11 @@
 package com.example.wishpchatroom.data
 
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.CollectionReference
+import com.google.firebase.firestore.DocumentSnapshot
+import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.Query
 import kotlinx.coroutines.tasks.await
 
@@ -9,135 +13,122 @@ class ChatRepository(
     private val firestore: FirebaseFirestore,
     private val auth: FirebaseAuth
 ) {
-    fun getMessages(roomCode: String, onMessagesChanged: (List<Message>) -> Unit) {
-        firestore.collection("rooms")
-            .document(roomCode)
+    val currentUid: String? get() = auth.currentUser?.uid
+
+    private fun roomRef(roomCode: String) = firestore.collection("rooms").document(roomCode)
+
+    /** Listens to the latest [MESSAGE_LIMIT] messages. The caller must remove the registration. */
+    fun listenToMessages(
+        roomCode: String,
+        onMessagesChanged: (List<Message>) -> Unit,
+        onError: (Exception) -> Unit
+    ): ListenerRegistration {
+        return roomRef(roomCode)
             .collection("messages")
-            .orderBy("timestamp", Query.Direction.ASCENDING)
-            .addSnapshotListener { snapshot, _ ->
+            .orderBy("timestamp", Query.Direction.DESCENDING)
+            .limit(MESSAGE_LIMIT)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    onError(error)
+                    return@addSnapshotListener
+                }
                 if (snapshot != null) {
                     val messages = snapshot.documents.mapNotNull { doc ->
-                        doc.toObject(Message::class.java)
+                        doc.toObject(
+                            Message::class.java,
+                            DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
+                        )
                     }
-                    onMessagesChanged(messages)
+                    onMessagesChanged(messages.reversed())
                 }
             }
     }
 
-    suspend fun sendMessage(roomCode: String, messageText: String, username: String) {
-        try {
-            // Check if room is still open before sending
-            val roomDoc = firestore.collection("rooms").document(roomCode).get().await()
-            val room = roomDoc.toObject(Room::class.java)
+    suspend fun getRoom(roomCode: String): Room? {
+        return try {
+            roomRef(roomCode).get().await().toObject(Room::class.java)
+        } catch (e: Exception) {
+            null
+        }
+    }
 
-            if (room?.roomOpen == true) {
-                val message = Message(
-                    username = username,
-                    messageText = messageText,
-                    timestamp = System.currentTimeMillis()
+    suspend fun sendMessage(roomCode: String, messageText: String, username: String): Result<Unit> {
+        val uid = currentUid ?: return Result.Error(Exception("You must be logged in"))
+        return try {
+            // Membership and "room is open" are enforced by the security rules.
+            roomRef(roomCode).collection("messages").add(
+                mapOf(
+                    "uid" to uid,
+                    "username" to username,
+                    "messageText" to messageText,
+                    "timestamp" to FieldValue.serverTimestamp()
                 )
-
-                firestore.collection("rooms")
-                    .document(roomCode)
-                    .collection("messages")
-                    .add(message)
-                    .await()
-            }
+            ).await()
+            Result.Success(Unit)
         } catch (e: Exception) {
-            // Handle error
+            Result.Error(Exception("Message not sent. The room may be closed.", e))
         }
     }
 
-    suspend fun checkRoomOwnership(roomCode: String, callback: (Boolean) -> Unit) {
-        try {
-            val currentUser = auth.currentUser
-            val roomDoc = firestore.collection("rooms").document(roomCode).get().await()
-            val room = roomDoc.toObject(Room::class.java)
-
-            val isOwner = room?.creatorUid == currentUser?.uid
-            callback(isOwner)
+    suspend fun closeRoom(roomCode: String): Result<Unit> {
+        return try {
+            roomRef(roomCode).update("roomOpen", false).await()
+            Result.Success(Unit)
         } catch (e: Exception) {
-            callback(false)
+            Result.Error(e)
         }
     }
 
-    suspend fun closeRoom(roomCode: String) {
-        try {
-            firestore.collection("rooms").document(roomCode)
-                .update("roomOpen", false)
-                .await()
+    suspend fun deleteRoom(roomCode: String): Result<Unit> {
+        return try {
+            val room = roomRef(roomCode)
+            deleteCollection(room.collection("messages"))
+            deleteCollection(room.collection("presence"))
+            room.delete().await()
+            Result.Success(Unit)
         } catch (e: Exception) {
-            // Handle error
-        }
-    }
-
-    suspend fun deleteRoom(roomCode: String) {
-        try {
-            // Delete all messages in the room
-            val messagesSnapshot = firestore.collection("rooms")
-                .document(roomCode)
-                .collection("messages")
-                .get()
-                .await()
-
-            for (messageDoc in messagesSnapshot.documents) {
-                messageDoc.reference.delete().await()
-            }
-
-            // Delete all presence data
-            val presenceSnapshot = firestore.collection("rooms")
-                .document(roomCode)
-                .collection("presence")
-                .get()
-                .await()
-
-            for (presenceDoc in presenceSnapshot.documents) {
-                presenceDoc.reference.delete().await()
-            }
-
-            // Delete the room document
-            firestore.collection("rooms")
-                .document(roomCode)
-                .delete()
-                .await()
-        } catch (e: Exception) {
-            // Handle error
+            Result.Error(e)
         }
     }
 
     suspend fun updateUserPresence(roomCode: String, username: String, isPresent: Boolean) {
+        val uid = currentUid ?: return
         try {
-            val presenceData = mapOf(
-                "username" to username,
-                "isPresent" to isPresent,
-                "lastSeen" to System.currentTimeMillis()
-            )
-
-            firestore.collection("rooms")
-                .document(roomCode)
-                .collection("presence")
-                .document(username)
-                .set(presenceData)
-                .await()
+            roomRef(roomCode).collection("presence").document(uid).set(
+                mapOf(
+                    "username" to username,
+                    "isPresent" to isPresent,
+                    "lastSeen" to FieldValue.serverTimestamp()
+                )
+            ).await()
         } catch (e: Exception) {
-            // Handle error
+            // Presence is best effort and must never break the chat.
         }
     }
 
-    suspend fun checkAndDeleteTemporaryRoom(roomCode: String) {
-        try {
-            val currentUser = auth.currentUser ?: return
-
-            val roomDoc = firestore.collection("rooms").document(roomCode).get().await()
-            val room = roomDoc.toObject(Room::class.java) ?: return
-
-            // Check if this is a temporary room and current user is the creator
-            if (room.isTemporary && room.creatorUid == currentUser.uid) {
-                // Delete the entire room
-                deleteRoom(roomCode)
-            }
-        } catch (e: Exception) {
-            // Handle error
+    /** Deletes the room only if it is temporary and the current user created it. */
+    suspend fun deleteIfTemporaryOwner(roomCode: String) {
+        val uid = currentUid ?: return
+        val room = getRoom(roomCode) ?: return
+        if (room.temporary && room.creatorUid == uid) {
+            deleteRoom(roomCode)
         }
+    }
+
+    /** Deletes a collection in batches so large rooms stay within Firestore's 500 writes per batch. */
+    private suspend fun deleteCollection(collection: CollectionReference) {
+        while (true) {
+            val snapshot = collection.limit(DELETE_BATCH_SIZE).get().await()
+            if (snapshot.isEmpty) return
+
+            val batch = firestore.batch()
+            snapshot.documents.forEach { batch.delete(it.reference) }
+            batch.commit().await()
+        }
+    }
+
+    private companion object {
+        const val MESSAGE_LIMIT = 100L
+        const val DELETE_BATCH_SIZE = 400L
     }
 }

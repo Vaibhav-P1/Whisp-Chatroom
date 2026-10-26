@@ -1,11 +1,13 @@
 package com.example.wishpchatroom.data
 
+import java.util.Date
+
 data class Room(
     val roomCode: String = "",
     val creatorUid: String = "",
-    val creatorEmail: String = "",
     val roomOpen: Boolean = true,
-    val participants: List<String> = emptyList(),
-    val isTemporary: Boolean = false,
-    val timestamp: Long = 0L
+    // uid -> username chosen for this room
+    val members: Map<String, String> = emptyMap(),
+    val temporary: Boolean = false,
+    val timestamp: Date? = null
 )

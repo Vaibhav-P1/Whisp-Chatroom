@@ -57,28 +57,23 @@ fun ChatRoomScreen(
     var useSavedUsername by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf("") }
 
-    val roomResult by roomViewModel.roomResult.observeAsState()
+    val isLoading by roomViewModel.isLoading.observeAsState(false)
     val currentUser by authViewModel.currentUser.observeAsState()
 
-    LaunchedEffect(roomResult) {
-        when (roomResult) {
-            is com.example.wishpchatroom.data.Result.Success -> {
-                val generatedRoomCode = (roomResult as Result.Success<String>).data
-                // Save username if checkbox is checked
-                if (useSavedUsername && username.isNotBlank()) {
-                    with(sharedPref.edit()) {
-                        putString("default_username", username)
-                        apply()
+    // Each create/join result arrives exactly once, so navigation cannot fire twice.
+    LaunchedEffect(Unit) {
+        roomViewModel.events.collect { result ->
+            when (result) {
+                is Result.Success -> {
+                    if (useSavedUsername && username.isNotBlank()) {
+                        sharedPref.edit().putString("default_username", username.trim()).apply()
                     }
+                    errorMessage = ""
+                    onJoinRoom(result.data)
                 }
-                onJoinRoom(generatedRoomCode)
-                errorMessage = ""
-            }
-            is com.example.wishpchatroom.data.Result.Error -> {
-                errorMessage = (roomResult as Result.Error).exception.message ?: "Operation failed"
-            }
-            null -> {
-                errorMessage = ""
+                is Result.Error -> {
+                    errorMessage = result.exception.message ?: "Operation failed"
+                }
             }
         }
     }
@@ -243,28 +238,15 @@ fun ChatRoomScreen(
 
                 Button(
                     onClick = {
-                        if (username.isNotBlank()) {
-                            if (isCreateMode) {
-                                roomViewModel.createRoom(username, isTemporary)
-                            } else {
-                                if (roomCode.isNotBlank()) {
-                                    roomViewModel.joinRoom(roomCode, username) { success ->
-                                        if (success) {
-                                            if (useSavedUsername) {
-                                                with(sharedPref.edit()) {
-                                                    putString("default_username", username)
-                                                    apply()
-                                                }
-                                            }
-                                            onJoinRoom(roomCode)
-                                        }
-                                    }
-                                }
-                            }
+                        errorMessage = ""
+                        if (isCreateMode) {
+                            roomViewModel.createRoom(username, isTemporary)
+                        } else {
+                            roomViewModel.joinRoom(roomCode, username)
                         }
                     },
                     modifier = Modifier.fillMaxWidth(),
-                    enabled = username.isNotBlank() && (isCreateMode || roomCode.isNotBlank())
+                    enabled = !isLoading && username.isNotBlank() && (isCreateMode || roomCode.isNotBlank())
                 ) {
                     Text(
                         text = if (isCreateMode) "Create & Join Room" else "Join Room",

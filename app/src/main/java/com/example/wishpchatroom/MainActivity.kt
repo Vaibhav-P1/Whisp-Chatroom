@@ -116,7 +116,6 @@ fun NavigationGraph(
             Log.d("Navigation", "In ChatScreen with room: $roomCode")
             ChatScreenWithLifecycle(
                 roomCode = roomCode,
-                authViewModel = authViewModel,
                 onNavigateBack = {
                     Log.d("Navigation", "Back button clicked - navigating back")
                     navController.navigate(Screen.ChatRoomsScreen.route) {
@@ -131,52 +130,28 @@ fun NavigationGraph(
 @Composable
 fun ChatScreenWithLifecycle(
     roomCode: String,
-    authViewModel: AuthViewModel,
     onNavigateBack: () -> Unit
 ) {
     val chatViewModel: ChatViewModel = viewModel()
     val lifecycleOwner = LocalLifecycleOwner.current
-    val currentUser by authViewModel.currentUser.observeAsState()
 
-    // Handle temporary room cleanup on app lifecycle changes
+    // Presence follows the app lifecycle. Temporary rooms are NOT deleted here: backgrounding
+    // or rotating the app is not leaving the room. Deletion happens on an explicit leave.
     DisposableEffect(roomCode, lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
-                Lifecycle.Event.ON_PAUSE -> {
-                    // Update user presence to offline
-                    currentUser?.let { user ->
-                        chatViewModel.updateUserPresence(roomCode, user.firstName, false)
-                    }
-                }
-                Lifecycle.Event.ON_RESUME -> {
-                    // Update user presence to online
-                    currentUser?.let { user ->
-                        chatViewModel.updateUserPresence(roomCode, user.firstName, true)
-                    }
-                }
-                Lifecycle.Event.ON_STOP -> {
-                    // Check if this is a temporary room and user is the creator
-                    chatViewModel.checkAndDeleteTemporaryRoom(roomCode)
-                }
+                Lifecycle.Event.ON_PAUSE -> chatViewModel.updateUserPresence(roomCode, false)
+                Lifecycle.Event.ON_RESUME -> chatViewModel.updateUserPresence(roomCode, true)
                 else -> {}
             }
         }
 
         lifecycleOwner.lifecycle.addObserver(observer)
-
-        onDispose {
-            lifecycleOwner.lifecycle.removeObserver(observer)
-
-            currentUser?.let { user ->
-                chatViewModel.updateUserPresence(roomCode, user.firstName, false)
-                chatViewModel.checkAndDeleteTemporaryRoom(roomCode)
-            }
-        }
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     ChatScreen(
         roomCode = roomCode,
-        authViewModel = authViewModel,
         onNavigateBack = onNavigateBack
     )
 }

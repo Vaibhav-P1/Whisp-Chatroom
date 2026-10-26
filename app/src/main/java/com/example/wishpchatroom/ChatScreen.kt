@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -23,10 +24,10 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -57,42 +58,40 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.activity.compose.BackHandler
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.wishpchatroom.data.Message
-import com.example.wishpchatroom.viewmodel.AuthViewModel
 import com.example.wishpchatroom.viewmodel.ChatViewModel
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
-import java.util.Date
 import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatScreen(
     roomCode: String,
-    authViewModel: AuthViewModel,
     onNavigateBack: () -> Unit
 ) {
     val chatViewModel: ChatViewModel = viewModel()
     val context = LocalContext.current
 
     var messageText by remember { mutableStateOf("") }
-    var isRoomOwner by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
 
     val messages by chatViewModel.messages.observeAsState(emptyList())
-    val currentUser by authViewModel.currentUser.observeAsState()
+    val isRoomOwner by chatViewModel.isOwner.observeAsState(false)
+    val errorMessage by chatViewModel.error.observeAsState()
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
 
     LaunchedEffect(roomCode) {
         Log.d("ChatScreen", "Loading messages for room: $roomCode")
+        chatViewModel.loadRoom(roomCode)
         chatViewModel.loadMessages(roomCode)
-        chatViewModel.checkRoomOwnership(roomCode) { isOwner ->
-            Log.d("ChatScreen", "Room ownership checked: $isOwner")
-            isRoomOwner = isOwner
-        }
     }
+
+    // System back leaves the room the same way the back arrow does.
+    BackHandler { chatViewModel.leaveRoom(roomCode, onNavigateBack) }
 
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) {
@@ -111,9 +110,8 @@ fun ChatScreen(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        chatViewModel.deleteRoom(roomCode)
                         showDeleteDialog = false
-                        onNavigateBack()
+                        chatViewModel.deleteRoom(roomCode, onNavigateBack)
                     }
                 ) {
                     Text("Delete", color = MaterialTheme.colorScheme.error)
@@ -132,6 +130,7 @@ fun ChatScreen(
             .fillMaxSize()
             .statusBarsPadding()
             .navigationBarsPadding()
+            .imePadding()
     ) {
         TopAppBar(
             title = {
@@ -154,11 +153,11 @@ fun ChatScreen(
                 IconButton(
                     onClick = {
                         Log.d("ChatScreen", "Back button clicked")
-                        onNavigateBack()
+                        chatViewModel.leaveRoom(roomCode, onNavigateBack)
                     }
                 ) {
                     Icon(
-                        Icons.Default.ArrowBack,
+                        Icons.AutoMirrored.Filled.ArrowBack,
                         contentDescription = "Back",
                         tint = MaterialTheme.colorScheme.onPrimary
                     )
@@ -203,10 +202,7 @@ fun ChatScreen(
                     OutlinedButton(
                         onClick = {
                             Log.d("ChatScreen", "Close room button clicked")
-                            onNavigateBack()
-                            coroutineScope.launch {
-                                chatViewModel.closeRoom(roomCode)
-                            }
+                            chatViewModel.closeRoom(roomCode, onNavigateBack)
                         },
                         modifier = Modifier.padding(horizontal = 4.dp),
                         colors = ButtonDefaults.outlinedButtonColors(
@@ -242,14 +238,23 @@ fun ChatScreen(
         ) {
             item { Spacer(modifier = Modifier.height(8.dp)) }
 
-            items(messages) { message ->
+            items(messages, key = { it.id }) { message ->
                 MessageCard(
                     message = message,
-                    isCurrentUser = message.username == currentUser?.firstName
+                    isCurrentUser = message.uid == chatViewModel.currentUid
                 )
             }
 
             item { Spacer(modifier = Modifier.height(8.dp)) }
+        }
+
+        errorMessage?.let { message ->
+            Text(
+                text = message,
+                color = MaterialTheme.colorScheme.error,
+                fontSize = 12.sp,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+            )
         }
 
         Card(
@@ -266,7 +271,10 @@ fun ChatScreen(
             ) {
                 OutlinedTextField(
                     value = messageText,
-                    onValueChange = { messageText = it },
+                    onValueChange = {
+                        messageText = it
+                        chatViewModel.clearError()
+                    },
                     placeholder = {
                         Text(
                             "Type a message...",
@@ -279,8 +287,8 @@ fun ChatScreen(
                 Spacer(modifier = Modifier.width(8.dp))
                 Button(
                     onClick = {
-                        if (messageText.isNotBlank() && currentUser != null) {
-                            chatViewModel.sendMessage(roomCode, messageText, currentUser!!.firstName)
+                        if (messageText.isNotBlank()) {
+                            chatViewModel.sendMessage(roomCode, messageText)
                             messageText = ""
                         }
                     },
@@ -288,7 +296,7 @@ fun ChatScreen(
                     modifier = Modifier.height(56.dp),
                     shape = RoundedCornerShape(28.dp)
                 ) {
-                    Icon(Icons.Default.Send, contentDescription = "Send")
+                    Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send")
                 }
             }
         }
@@ -300,7 +308,7 @@ fun MessageCard(
     message: Message,
     isCurrentUser: Boolean
 ) {
-    val timeFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
+    val timeFormat = remember { SimpleDateFormat("HH:mm", Locale.getDefault()) }
 
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -348,7 +356,7 @@ fun MessageCard(
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = timeFormat.format(Date(message.timestamp)),
+                    text = message.timestamp?.let { timeFormat.format(it) } ?: "",
                     fontSize = 10.sp,
                     color = if (isCurrentUser) {
                         MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.7f)

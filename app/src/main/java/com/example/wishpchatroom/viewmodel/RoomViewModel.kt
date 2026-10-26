@@ -8,33 +8,42 @@ import com.example.wishpchatroom.data.Injection
 import com.example.wishpchatroom.data.Result
 import com.example.wishpchatroom.data.RoomRepository
 import com.google.firebase.auth.FirebaseAuth
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 
 class RoomViewModel : ViewModel() {
     private val roomRepository = RoomRepository(Injection.instance(), FirebaseAuth.getInstance())
 
-    private val _roomResult = MutableLiveData<Result<String>>()
-    val roomResult: LiveData<Result<String>> get() = _roomResult
+    // One-shot events (a room was created/joined, or it failed). A Channel is used instead of
+    // LiveData so the result is delivered once and is not replayed after rotation or navigation.
+    private val _events = Channel<Result<String>>(Channel.BUFFERED)
+    val events: Flow<Result<String>> = _events.receiveAsFlow()
+
+    private val _isLoading = MutableLiveData(false)
+    val isLoading: LiveData<Boolean> get() = _isLoading
 
     fun createRoom(username: String, isTemporary: Boolean) {
+        if (_isLoading.value == true) return
         viewModelScope.launch {
-            _roomResult.value = roomRepository.createRoom(username, isTemporary)
+            _isLoading.value = true
+            _events.send(roomRepository.createRoom(username, isTemporary))
+            _isLoading.value = false
         }
     }
 
-    fun joinRoom(roomCode: String, username: String, callback: (Boolean) -> Unit) {
+    fun joinRoom(roomCode: String, username: String) {
+        if (_isLoading.value == true) return
+        val code = roomCode.trim().uppercase()
         viewModelScope.launch {
-            val result = roomRepository.joinRoom(roomCode, username)
-            when (result) {
-                is Result.Success -> {
-                    _roomResult.value = Result.Success(roomCode)
-                    callback(true)
-                }
-                is Result.Error -> {
-                    _roomResult.value = result
-                    callback(false)
-                }
+            _isLoading.value = true
+            val event = when (val result = roomRepository.joinRoom(code, username)) {
+                is Result.Success -> Result.Success(code)
+                is Result.Error -> result
             }
+            _events.send(event)
+            _isLoading.value = false
         }
     }
 }
