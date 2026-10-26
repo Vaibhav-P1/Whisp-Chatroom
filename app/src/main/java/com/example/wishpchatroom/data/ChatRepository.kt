@@ -9,6 +9,12 @@ interface ChatRepository {
     fun observeMessages(roomCode: String, limit: Int): Flow<List<Message>>
 
     /**
+     * Messages of a room that contain [query], newest first. Searches the history that is stored on
+     * this device, so older messages that were never loaded are not found.
+     */
+    fun searchMessages(roomCode: String, query: String): Flow<List<Message>>
+
+    /**
      * Keeps the local cache in sync with the server until the calling coroutine is cancelled.
      * Throws if the server listener fails (for example when the room was deleted).
      */

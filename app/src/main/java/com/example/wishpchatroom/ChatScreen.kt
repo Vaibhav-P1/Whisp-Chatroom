@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.People
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -78,8 +79,9 @@ fun ChatScreen(
         uiState.editing?.let { messageText = it.messageText }
     }
 
-    // System back leaves the room the same way the back arrow does.
+    // System back leaves the room the same way the back arrow does; while searching it closes the search.
     BackHandler { chatViewModel.leaveRoom(roomCode, onNavigateBack) }
+    BackHandler(enabled = uiState.isSearching) { chatViewModel.closeSearch() }
 
     if (showDeleteDialog) {
         DeleteRoomDialog(
@@ -167,80 +169,95 @@ fun ChatScreen(
             .navigationBarsPadding()
             .imePadding()
     ) {
-        ChatTopBar(
-            roomCode = roomCode,
-            isRoomOwner = uiState.isOwner,
-            memberCount = uiState.members.size,
-            onBack = { chatViewModel.leaveRoom(roomCode, onNavigateBack) },
-            onMembers = { showMembers = true },
-            onClose = { chatViewModel.closeRoom(roomCode, onNavigateBack) },
-            onDelete = { showDeleteDialog = true }
-        )
-
-        if (uiState.roomStatus == RoomStatus.CLOSED) {
-            Text(
-                text = stringResource(R.string.room_closed_banner),
-                color = MaterialTheme.colorScheme.onErrorContainer,
-                fontSize = 12.sp,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(MaterialTheme.colorScheme.errorContainer)
-                    .padding(horizontal = 16.dp, vertical = 8.dp)
+        if (uiState.isSearching) {
+            ChatSearchBar(
+                query = uiState.searchQuery,
+                onQueryChange = chatViewModel::updateSearchQuery,
+                onClose = chatViewModel::closeSearch
             )
-        }
-
-        MessageList(
-            messages = uiState.messages,
-            currentUid = currentUid,
-            isLoadingOlder = uiState.isLoadingOlder,
-            onLoadOlder = { chatViewModel.loadOlderMessages(roomCode) },
-            onRetry = { messageId -> chatViewModel.retryMessage(roomCode, messageId) },
-            onMessageActions = { actionsMessage = it },
-            onToggleReaction = { messageId, emoji -> chatViewModel.toggleReaction(roomCode, messageId, emoji) },
-            modifier = Modifier.weight(1f)
-        )
-
-        uiState.errorMessage?.let { message ->
-            Text(
-                text = message,
-                color = MaterialTheme.colorScheme.error,
-                fontSize = 12.sp,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+            SearchResults(
+                query = uiState.searchQuery,
+                results = uiState.searchResults,
+                currentUid = currentUid,
+                modifier = Modifier.weight(1f)
             )
-        }
-
-        uiState.replyingTo?.let { quoted ->
-            ComposerBanner(
-                title = stringResource(R.string.replying_to, quoted.username),
-                text = quoted.messageText,
-                onCancel = { chatViewModel.cancelComposerMode() }
+        } else {
+            ChatTopBar(
+                roomCode = roomCode,
+                isRoomOwner = uiState.isOwner,
+                memberCount = uiState.members.size,
+                onBack = { chatViewModel.leaveRoom(roomCode, onNavigateBack) },
+                onSearch = { chatViewModel.startSearch(roomCode) },
+                onMembers = { showMembers = true },
+                onClose = { chatViewModel.closeRoom(roomCode, onNavigateBack) },
+                onDelete = { showDeleteDialog = true }
             )
-        }
 
-        uiState.editing?.let { editing ->
-            ComposerBanner(
-                title = stringResource(R.string.editing_message),
-                text = editing.messageText,
-                onCancel = {
-                    chatViewModel.cancelComposerMode()
-                    messageText = ""
-                }
-            )
-        }
-
-        MessageInput(
-            text = messageText,
-            enabled = isRoomOpen,
-            onTextChange = {
-                messageText = it
-                chatViewModel.clearError()
-            },
-            onSend = {
-                if (messageText.isNotBlank() && chatViewModel.sendMessage(roomCode, messageText)) {
-                    messageText = ""
-                }
+            if (uiState.roomStatus == RoomStatus.CLOSED) {
+                Text(
+                    text = stringResource(R.string.room_closed_banner),
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                    fontSize = 12.sp,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.errorContainer)
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                )
             }
-        )
+
+            MessageList(
+                messages = uiState.messages,
+                currentUid = currentUid,
+                isLoadingOlder = uiState.isLoadingOlder,
+                onLoadOlder = { chatViewModel.loadOlderMessages(roomCode) },
+                onRetry = { messageId -> chatViewModel.retryMessage(roomCode, messageId) },
+                onMessageActions = { actionsMessage = it },
+                onToggleReaction = { messageId, emoji -> chatViewModel.toggleReaction(roomCode, messageId, emoji) },
+                modifier = Modifier.weight(1f)
+            )
+
+            uiState.errorMessage?.let { message ->
+                Text(
+                    text = message,
+                    color = MaterialTheme.colorScheme.error,
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                )
+            }
+
+            uiState.replyingTo?.let { quoted ->
+                ComposerBanner(
+                    title = stringResource(R.string.replying_to, quoted.username),
+                    text = quoted.messageText,
+                    onCancel = { chatViewModel.cancelComposerMode() }
+                )
+            }
+
+            uiState.editing?.let { editing ->
+                ComposerBanner(
+                    title = stringResource(R.string.editing_message),
+                    text = editing.messageText,
+                    onCancel = {
+                        chatViewModel.cancelComposerMode()
+                        messageText = ""
+                    }
+                )
+            }
+
+            MessageInput(
+                text = messageText,
+                enabled = isRoomOpen,
+                onTextChange = {
+                    messageText = it
+                    chatViewModel.clearError()
+                },
+                onSend = {
+                    if (messageText.isNotBlank() && chatViewModel.sendMessage(roomCode, messageText)) {
+                        messageText = ""
+                    }
+                }
+            )
+        }
     }
 }
 
@@ -251,6 +268,7 @@ private fun ChatTopBar(
     isRoomOwner: Boolean,
     memberCount: Int,
     onBack: () -> Unit,
+    onSearch: () -> Unit,
     onMembers: () -> Unit,
     onClose: () -> Unit,
     onDelete: () -> Unit
@@ -289,6 +307,14 @@ private fun ChatTopBar(
             }
         },
         actions = {
+            IconButton(onClick = onSearch) {
+                Icon(
+                    Icons.Default.Search,
+                    contentDescription = stringResource(R.string.search_messages),
+                    tint = MaterialTheme.colorScheme.onPrimary
+                )
+            }
+
             // Shows who is in the room (and who is online); the count is part of the description
             // so screen readers announce it too.
             IconButton(onClick = onMembers) {

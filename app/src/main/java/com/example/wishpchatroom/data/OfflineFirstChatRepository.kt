@@ -30,6 +30,17 @@ class OfflineFirstChatRepository @Inject constructor(
             entities.asReversed().map { it.toDomain() }
         }
 
+    override fun searchMessages(roomCode: String, query: String): Flow<List<Message>> {
+        // Escape LIKE wildcards so that searching for "50%" or "a_b" matches those characters literally.
+        val escaped = query.trim()
+            .replace("\\", "\\\\")
+            .replace("%", "\\%")
+            .replace("_", "\\_")
+        return messageDao.search(roomCode, "%$escaped%", SEARCH_LIMIT).map { entities ->
+            entities.map { it.toDomain() }
+        }
+    }
+
     override suspend fun syncMessages(roomCode: String) {
         remote.observeLatestMessages(roomCode, SYNC_WINDOW).collect { messages ->
             messageDao.upsertAll(messages.map { it.toEntity(roomCode) })
@@ -184,5 +195,8 @@ class OfflineFirstChatRepository @Inject constructor(
 
         // Messages fetched per request when scrolling back through history.
         const val PAGE_SIZE = 30L
+
+        // The most matches a search shows.
+        const val SEARCH_LIMIT = 100
     }
 }

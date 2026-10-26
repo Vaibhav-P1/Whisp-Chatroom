@@ -13,6 +13,16 @@ interface MessageDao {
     @Query("SELECT * FROM messages WHERE roomCode = :roomCode ORDER BY timestamp DESC, id DESC LIMIT :limit")
     fun observeLatest(roomCode: String, limit: Int): Flow<List<MessageEntity>>
 
+    /**
+     * Cached messages whose text contains [pattern] (a LIKE pattern, already escaped with a
+     * backslash), newest first. Deleted messages have no text left and never match.
+     */
+    @Query(
+        "SELECT * FROM messages WHERE roomCode = :roomCode AND deleted = 0 " +
+            "AND messageText LIKE :pattern ESCAPE '\\' ORDER BY timestamp DESC, id DESC LIMIT :limit"
+    )
+    fun search(roomCode: String, pattern: String, limit: Int): Flow<List<MessageEntity>>
+
     @Query("SELECT COUNT(*) FROM messages WHERE roomCode = :roomCode")
     suspend fun count(roomCode: String): Int
 

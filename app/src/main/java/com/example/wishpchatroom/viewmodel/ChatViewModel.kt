@@ -12,6 +12,7 @@ import com.example.wishpchatroom.data.toUserMessage
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -20,8 +21,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -50,10 +53,13 @@ data class ChatUiState(
     val members: List<Member> = emptyList(),
     // What the message box is currently doing besides sending a plain message (at most one of them).
     val replyingTo: Message? = null,
-    val editing: Message? = null
+    val editing: Message? = null,
+    val isSearching: Boolean = false,
+    val searchQuery: String = "",
+    val searchResults: List<Message> = emptyList()
 )
 
-@OptIn(ExperimentalCoroutinesApi::class)
+@OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class)
 @HiltViewModel
 class ChatViewModel @Inject constructor(
     private val chatRepository: ChatRepository
@@ -66,7 +72,10 @@ class ChatViewModel @Inject constructor(
     private var syncJob: Job? = null
     private var roomJob: Job? = null
     private var heartbeatJob: Job? = null
+    private var searchJob: Job? = null
     private var isLeaving = false
+
+    private val searchQuery = MutableStateFlow("")
 
     // How many of the newest cached messages are shown. Grows as the user scrolls back through history.
     private val messageLimit = MutableStateFlow(MESSAGE_WINDOW)
@@ -227,6 +236,33 @@ class ChatViewModel @Inject constructor(
         return true
     }
 
+    /** Opens search over the messages stored on this device. */
+    fun startSearch(roomCode: String) {
+        _uiState.update { it.copy(isSearching = true) }
+        searchJob?.cancel()
+        searchJob = viewModelScope.launch {
+            searchQuery
+                .debounce(SEARCH_DEBOUNCE_MS)
+                .flatMapLatest { query ->
+                    if (query.isBlank()) flowOf(emptyList()) else chatRepository.searchMessages(roomCode, query)
+                }
+                .catch { e -> showError(e.toUserMessage("Search failed.")) }
+                .collect { results -> _uiState.update { it.copy(searchResults = results) } }
+        }
+    }
+
+    fun updateSearchQuery(query: String) {
+        searchQuery.value = query
+        _uiState.update { it.copy(searchQuery = query) }
+    }
+
+    fun closeSearch() {
+        searchJob?.cancel()
+        searchJob = null
+        searchQuery.value = ""
+        _uiState.update { it.copy(isSearching = false, searchQuery = "", searchResults = emptyList()) }
+    }
+
     fun startReply(message: Message) {
         _uiState.update { it.copy(replyingTo = message, editing = null) }
     }
@@ -367,10 +403,12 @@ class ChatViewModel @Inject constructor(
         syncJob?.cancel()
         roomJob?.cancel()
         heartbeatJob?.cancel()
+        searchJob?.cancel()
         messagesJob = null
         syncJob = null
         roomJob = null
         heartbeatJob = null
+        searchJob = null
     }
 
     private fun showError(message: String) {
@@ -397,6 +435,9 @@ class ChatViewModel @Inject constructor(
 
         // How much of the quoted message is stored with a reply (the rules allow up to 200).
         const val REPLY_SNIPPET_LENGTH = 100
+
+        // Wait for the user to pause typing before running a search.
+        const val SEARCH_DEBOUNCE_MS = 250L
 
         // A foreground chat refreshes presence this often; a member is online if seen within the timeout.
         const val HEARTBEAT_MS = 60_000L

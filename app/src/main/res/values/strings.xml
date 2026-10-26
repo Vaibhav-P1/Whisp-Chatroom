@@ -59,6 +59,15 @@
     <string name="delete">Delete</string>
     <string name="cancel">Cancel</string>
     <string name="message_hint">Type a message...</string>
+    <string name="search_messages">Search messages</string>
+    <string name="search_hint">Search this room…</string>
+    <string name="search_prompt">Type to search the messages stored on this device.</string>
+    <string name="search_no_results">No messages match your search.</string>
+    <plurals name="search_result_count">
+        <item quantity="one">%1$d matching message</item>
+        <item quantity="other">%1$d matching messages</item>
+    </plurals>
+    <string name="clear_search">Clear search</string>
     <string name="reply">Reply</string>
     <string name="copy_text">Copy text</string>
     <string name="edit_message">Edit message</string>
