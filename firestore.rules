@@ -61,7 +61,16 @@ service cloud.firestore {
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members'])
           && request.resource.data.members.diff(resource.data.members).affectedKeys().hasOnly([request.auth.uid])
           && request.resource.data.members.diff(resource.data.members).addedKeys().hasOnly([request.auth.uid])
+          // hasOnly is also true for an empty set, so require a real addition: renaming yourself is not joining.
+          && request.resource.data.members.diff(resource.data.members).addedKeys().size() == 1
           && validName(request.resource.data.members[request.auth.uid]))
+        ||
+        // A member (not the owner) leaves by removing only their own uid.
+        (resource.data.creatorUid != request.auth.uid
+          && request.auth.uid in resource.data.members
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members'])
+          && !(request.auth.uid in request.resource.data.members)
+          && request.resource.data.members.diff(resource.data.members).affectedKeys().hasOnly([request.auth.uid]))
       );
 
       allow delete: if signedIn() && resource.data.creatorUid == request.auth.uid;

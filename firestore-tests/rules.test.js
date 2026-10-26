@@ -8,7 +8,7 @@ const {
 } = require('@firebase/rules-unit-testing');
 const {
   doc, getDoc, getDocs, collection, setDoc, updateDoc, deleteDoc, addDoc,
-  serverTimestamp, query, limit,
+  serverTimestamp, deleteField, query, limit,
 } = require('firebase/firestore');
 
 const ROOM = 'ABC123';
@@ -182,5 +182,56 @@ describe('presence', () => {
     await seedRoom();
     await assertSucceeds(setDoc(doc(asUser('alice'), 'rooms', ROOM, 'presence', 'alice'), presence('alice')));
     await assertSucceeds(deleteDoc(doc(asUser('owner'), 'rooms', ROOM, 'presence', 'alice')));
+  });
+
+  it('lets a member remove their own presence doc but not someone else\'s', async () => {
+    await seedRoom();
+    await assertSucceeds(setDoc(doc(asUser('alice'), 'rooms', ROOM, 'presence', 'alice'), presence('alice')));
+    await assertFails(deleteDoc(doc(asUser('stranger'), 'rooms', ROOM, 'presence', 'alice')));
+    await assertSucceeds(deleteDoc(doc(asUser('alice'), 'rooms', ROOM, 'presence', 'alice')));
+  });
+});
+
+describe('client-chosen message ids', () => {
+  const msg = (uid, name) => ({
+    uid, username: name, messageText: 'hello', timestamp: serverTimestamp(),
+  });
+
+  it('lets a member create a message under their own id, but never overwrite it', async () => {
+    await seedRoom();
+    const ref = doc(asUser('alice'), 'rooms', ROOM, 'messages', 'client-uuid-1');
+    await assertSucceeds(setDoc(ref, msg('alice', 'Alice')));
+    await assertFails(setDoc(ref, msg('alice', 'Alice')));
+  });
+});
+
+describe('leaving a room', () => {
+  it('lets a member remove only themselves', async () => {
+    await seedRoom();
+    const ref = doc(asUser('alice'), 'rooms', ROOM);
+    await assertSucceeds(updateDoc(ref, { 'members.alice': deleteField() }));
+  });
+
+  it('does not let a member remove someone else or rename themselves', async () => {
+    await seedRoom();
+    const ref = doc(asUser('alice'), 'rooms', ROOM);
+    await assertFails(updateDoc(ref, { 'members.owner': deleteField() }));
+    await assertFails(updateDoc(ref, { 'members.alice': 'Renamed' }));
+  });
+
+  it('does not let a stranger "leave" a room they are not in', async () => {
+    await seedRoom();
+    await assertFails(updateDoc(doc(asUser('stranger'), 'rooms', ROOM), { 'members.stranger': deleteField() }));
+  });
+
+  it('does not let the owner leave (they must close or delete the room)', async () => {
+    await seedRoom();
+    await assertFails(updateDoc(doc(asUser('owner'), 'rooms', ROOM), { 'members.owner': deleteField() }));
+  });
+
+  it('frees the username for someone else after leaving', async () => {
+    await seedRoom();
+    await assertSucceeds(updateDoc(doc(asUser('alice'), 'rooms', ROOM), { 'members.alice': deleteField() }));
+    await assertSucceeds(updateDoc(doc(asUser('bob'), 'rooms', ROOM), { 'members.bob': 'Alice' }));
   });
 });
