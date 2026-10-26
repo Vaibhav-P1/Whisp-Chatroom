@@ -4,7 +4,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
-import android.util.Log
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
@@ -49,7 +48,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -57,36 +55,26 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.activity.compose.BackHandler
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.wishpchatroom.data.Message
 import com.example.wishpchatroom.viewmodel.ChatViewModel
-import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Locale
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatScreen(
     roomCode: String,
     onNavigateBack: () -> Unit
 ) {
     val chatViewModel: ChatViewModel = hiltViewModel()
-    val context = LocalContext.current
 
     var messageText by remember { mutableStateOf("") }
     var showDeleteDialog by remember { mutableStateOf(false) }
 
     val uiState by chatViewModel.uiState.collectAsStateWithLifecycle()
-    val messages = uiState.messages
-    val isRoomOwner = uiState.isOwner
-    val errorMessage = uiState.errorMessage
-    val listState = rememberLazyListState()
-    val coroutineScope = rememberCoroutineScope()
 
     LaunchedEffect(roomCode) {
-        Log.d("ChatScreen", "Loading messages for room: $roomCode")
         chatViewModel.loadRoom(roomCode)
         chatViewModel.loadMessages(roomCode)
     }
@@ -94,35 +82,13 @@ fun ChatScreen(
     // System back leaves the room the same way the back arrow does.
     BackHandler { chatViewModel.leaveRoom(roomCode, onNavigateBack) }
 
-    LaunchedEffect(messages.size) {
-        if (messages.isNotEmpty()) {
-            coroutineScope.launch {
-                listState.animateScrollToItem(messages.size - 1)
-            }
-        }
-    }
-
-    // Delete confirmation dialog
     if (showDeleteDialog) {
-        AlertDialog(
-            onDismissRequest = { showDeleteDialog = false },
-            title = { Text("Delete Room") },
-            text = { Text("Are you sure you want to permanently delete this room? This action cannot be undone.") },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showDeleteDialog = false
-                        chatViewModel.deleteRoom(roomCode, onNavigateBack)
-                    }
-                ) {
-                    Text("Delete", color = MaterialTheme.colorScheme.error)
-                }
+        DeleteRoomDialog(
+            onConfirm = {
+                showDeleteDialog = false
+                chatViewModel.deleteRoom(roomCode, onNavigateBack)
             },
-            dismissButton = {
-                TextButton(onClick = { showDeleteDialog = false }) {
-                    Text("Cancel")
-                }
-            }
+            onDismiss = { showDeleteDialog = false }
         )
     }
 
@@ -133,123 +99,21 @@ fun ChatScreen(
             .navigationBarsPadding()
             .imePadding()
     ) {
-        TopAppBar(
-            title = {
-                Column {
-                    Text(
-                        text = "Room: $roomCode",
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onPrimary
-                    )
-                    if (isRoomOwner) {
-                        Text(
-                            text = "(Owner)",
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f)
-                        )
-                    }
-                }
-            },
-            navigationIcon = {
-                IconButton(
-                    onClick = {
-                        Log.d("ChatScreen", "Back button clicked")
-                        chatViewModel.leaveRoom(roomCode, onNavigateBack)
-                    }
-                ) {
-                    Icon(
-                        Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "Back",
-                        tint = MaterialTheme.colorScheme.onPrimary
-                    )
-                }
-            },
-            actions = {
-                // Copy room code button
-                IconButton(
-                    onClick = {
-                        val clipboardManager = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        val clip = ClipData.newPlainText("Room Code", roomCode)
-                        clipboardManager.setPrimaryClip(clip)
-                    }
-                ) {
-                    Icon(
-                        Icons.Default.ContentCopy,
-                        contentDescription = "Copy Room Code",
-                        tint = MaterialTheme.colorScheme.onPrimary
-                    )
-                }
-
-                // Share room code button
-                IconButton(
-                    onClick = {
-                        val shareIntent = Intent().apply {
-                            action = Intent.ACTION_SEND
-                            putExtra(Intent.EXTRA_TEXT, "Join my chat room with code: $roomCode")
-                            type = "text/plain"
-                        }
-                        context.startActivity(Intent.createChooser(shareIntent, "Share Room Code"))
-                    }
-                ) {
-                    Icon(
-                        Icons.Default.Share,
-                        contentDescription = "Share Room Code",
-                        tint = MaterialTheme.colorScheme.onPrimary
-                    )
-                }
-
-                if (isRoomOwner) {
-                    // Close room button
-                    OutlinedButton(
-                        onClick = {
-                            Log.d("ChatScreen", "Close room button clicked")
-                            chatViewModel.closeRoom(roomCode, onNavigateBack)
-                        },
-                        modifier = Modifier.padding(horizontal = 4.dp),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = MaterialTheme.colorScheme.onPrimary
-                        )
-                    ) {
-                        Text("Close", fontSize = 12.sp)
-                    }
-
-                    // Delete room button
-                    IconButton(
-                        onClick = { showDeleteDialog = true }
-                    ) {
-                        Icon(
-                            Icons.Default.Delete,
-                            contentDescription = "Delete Room",
-                            tint = MaterialTheme.colorScheme.onPrimary
-                        )
-                    }
-                }
-            },
-            colors = TopAppBarDefaults.topAppBarColors(
-                containerColor = MaterialTheme.colorScheme.primary
-            )
+        ChatTopBar(
+            roomCode = roomCode,
+            isRoomOwner = uiState.isOwner,
+            onBack = { chatViewModel.leaveRoom(roomCode, onNavigateBack) },
+            onClose = { chatViewModel.closeRoom(roomCode, onNavigateBack) },
+            onDelete = { showDeleteDialog = true }
         )
 
-        LazyColumn(
-            modifier = Modifier
-                .weight(1f)
-                .padding(horizontal = 8.dp),
-            state = listState,
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            item { Spacer(modifier = Modifier.height(8.dp)) }
+        MessageList(
+            messages = uiState.messages,
+            currentUid = chatViewModel.currentUid,
+            modifier = Modifier.weight(1f)
+        )
 
-            items(messages, key = { it.id }) { message ->
-                MessageCard(
-                    message = message,
-                    isCurrentUser = message.uid == chatViewModel.currentUid
-                )
-            }
-
-            item { Spacer(modifier = Modifier.height(8.dp)) }
-        }
-
-        errorMessage?.let { message ->
+        uiState.errorMessage?.let { message ->
             Text(
                 text = message,
                 color = MaterialTheme.colorScheme.error,
@@ -258,47 +122,208 @@ fun ChatScreen(
             )
         }
 
-        Card(
+        MessageInput(
+            text = messageText,
+            onTextChange = {
+                messageText = it
+                chatViewModel.clearError()
+            },
+            onSend = {
+                if (messageText.isNotBlank()) {
+                    chatViewModel.sendMessage(roomCode, messageText)
+                    messageText = ""
+                }
+            }
+        )
+    }
+}
+
+@Composable
+private fun DeleteRoomDialog(
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Delete Room") },
+        text = { Text("Are you sure you want to permanently delete this room? This action cannot be undone.") },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text("Delete", color = MaterialTheme.colorScheme.error)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ChatTopBar(
+    roomCode: String,
+    isRoomOwner: Boolean,
+    onBack: () -> Unit,
+    onClose: () -> Unit,
+    onDelete: () -> Unit
+) {
+    val context = LocalContext.current
+
+    TopAppBar(
+        title = {
+            Column {
+                Text(
+                    text = "Room: $roomCode",
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onPrimary
+                )
+                if (isRoomOwner) {
+                    Text(
+                        text = "(Owner)",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f)
+                    )
+                }
+            }
+        },
+        navigationIcon = {
+            IconButton(onClick = onBack) {
+                Icon(
+                    Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "Back",
+                    tint = MaterialTheme.colorScheme.onPrimary
+                )
+            }
+        },
+        actions = {
+            IconButton(
+                onClick = {
+                    val clipboardManager = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    clipboardManager.setPrimaryClip(ClipData.newPlainText("Room Code", roomCode))
+                }
+            ) {
+                Icon(
+                    Icons.Default.ContentCopy,
+                    contentDescription = "Copy Room Code",
+                    tint = MaterialTheme.colorScheme.onPrimary
+                )
+            }
+
+            IconButton(
+                onClick = {
+                    val shareIntent = Intent().apply {
+                        action = Intent.ACTION_SEND
+                        putExtra(Intent.EXTRA_TEXT, "Join my chat room with code: $roomCode")
+                        type = "text/plain"
+                    }
+                    context.startActivity(Intent.createChooser(shareIntent, "Share Room Code"))
+                }
+            ) {
+                Icon(
+                    Icons.Default.Share,
+                    contentDescription = "Share Room Code",
+                    tint = MaterialTheme.colorScheme.onPrimary
+                )
+            }
+
+            if (isRoomOwner) {
+                OutlinedButton(
+                    onClick = onClose,
+                    modifier = Modifier.padding(horizontal = 4.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = MaterialTheme.colorScheme.onPrimary
+                    )
+                ) {
+                    Text("Close", fontSize = 12.sp)
+                }
+
+                IconButton(onClick = onDelete) {
+                    Icon(
+                        Icons.Default.Delete,
+                        contentDescription = "Delete Room",
+                        tint = MaterialTheme.colorScheme.onPrimary
+                    )
+                }
+            }
+        },
+        colors = TopAppBarDefaults.topAppBarColors(
+            containerColor = MaterialTheme.colorScheme.primary
+        )
+    )
+}
+
+@Composable
+private fun MessageList(
+    messages: List<Message>,
+    currentUid: String?,
+    modifier: Modifier = Modifier
+) {
+    val listState = rememberLazyListState()
+
+    LaunchedEffect(messages.size) {
+        if (messages.isNotEmpty()) {
+            listState.animateScrollToItem(messages.size - 1)
+        }
+    }
+
+    LazyColumn(
+        modifier = modifier.padding(horizontal = 8.dp),
+        state = listState,
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        item { Spacer(modifier = Modifier.height(8.dp)) }
+
+        items(messages, key = { it.id }) { message ->
+            MessageCard(
+                message = message,
+                isCurrentUser = message.uid == currentUid
+            )
+        }
+
+        item { Spacer(modifier = Modifier.height(8.dp)) }
+    }
+}
+
+@Composable
+private fun MessageInput(
+    text: String,
+    onTextChange: (String) -> Unit,
+    onSend: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(8.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+    ) {
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(8.dp),
-            elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(12.dp),
-                verticalAlignment = Alignment.CenterVertically
+            OutlinedTextField(
+                value = text,
+                onValueChange = onTextChange,
+                placeholder = {
+                    Text(
+                        "Type a message...",
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                    )
+                },
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(24.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Button(
+                onClick = onSend,
+                enabled = text.isNotBlank(),
+                modifier = Modifier.height(56.dp),
+                shape = RoundedCornerShape(28.dp)
             ) {
-                OutlinedTextField(
-                    value = messageText,
-                    onValueChange = {
-                        messageText = it
-                        chatViewModel.clearError()
-                    },
-                    placeholder = {
-                        Text(
-                            "Type a message...",
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                        )
-                    },
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(24.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Button(
-                    onClick = {
-                        if (messageText.isNotBlank()) {
-                            chatViewModel.sendMessage(roomCode, messageText)
-                            messageText = ""
-                        }
-                    },
-                    enabled = messageText.isNotBlank(),
-                    modifier = Modifier.height(56.dp),
-                    shape = RoundedCornerShape(28.dp)
-                ) {
-                    Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send")
-                }
+                Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send")
             }
         }
     }

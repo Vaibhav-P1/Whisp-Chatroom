@@ -34,8 +34,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.wishpchatroom.data.User
+import com.example.wishpchatroom.ui.components.ErrorCard
 import com.example.wishpchatroom.viewmodel.AuthViewModel
 import com.example.wishpchatroom.viewmodel.RoomViewModel
 
@@ -56,17 +58,15 @@ fun ChatRoomScreen(
     var useSavedUsername by remember { mutableStateOf(false) }
 
     val roomState by roomViewModel.uiState.collectAsStateWithLifecycle()
-    val isLoading = roomState.isLoading
-    val errorMessage = roomState.errorMessage
     val authState by authViewModel.uiState.collectAsStateWithLifecycle()
 
     // Each created/joined room arrives exactly once, so navigation cannot fire twice.
     LaunchedEffect(Unit) {
-        roomViewModel.roomEntered.collect { roomCode ->
+        roomViewModel.roomEntered.collect { enteredRoomCode ->
             if (useSavedUsername && username.isNotBlank()) {
                 sharedPref.edit().putString("default_username", username.trim()).apply()
             }
-            onJoinRoom(roomCode)
+            onJoinRoom(enteredRoomCode)
         }
     }
 
@@ -88,206 +88,256 @@ fun ChatRoomScreen(
             modifier = Modifier.padding(vertical = 24.dp)
         )
 
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surface
-            )
-        ) {
-            Column(
-                modifier = Modifier.padding(16.dp)
-            ) {
-                Text(
-                    text = "Select Action",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.padding(bottom = 16.dp)
-                )
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Button(
-                        onClick = { isCreateMode = true },
-                        modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (isCreateMode) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.outline
-                        )
-                    ) {
-                        Text("Create Room")
-                    }
-
-                    Button(
-                        onClick = { isCreateMode = false },
-                        modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (!isCreateMode) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.outline
-                        )
-                    ) {
-                        Text("Join Room")
-                    }
-                }
-            }
-        }
+        RoomModeSelector(
+            isCreateMode = isCreateMode,
+            onModeSelected = { isCreateMode = it }
+        )
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surface
-            )
+        RoomForm(
+            username = username,
+            onUsernameChange = { username = it },
+            useSavedUsername = useSavedUsername,
+            onUseSavedUsernameChange = {
+                useSavedUsername = it
+                if (it && username.isBlank()) {
+                    username = sharedPref.getString("default_username", "") ?: ""
+                }
+            },
+            isCreateMode = isCreateMode,
+            roomCode = roomCode,
+            onRoomCodeChange = { roomCode = it.uppercase() },
+            isTemporary = isTemporary,
+            onTemporaryChange = { isTemporary = it },
+            errorMessage = roomState.errorMessage,
+            isLoading = roomState.isLoading,
+            onSubmit = {
+                if (isCreateMode) {
+                    roomViewModel.createRoom(username, isTemporary)
+                } else {
+                    roomViewModel.joinRoom(roomCode, username)
+                }
+            }
+        )
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        AccountCard(
+            user = authState.currentUser,
+            onLogout = {
+                authViewModel.logout()
+                onNavigateToLogin()
+            }
+        )
+    }
+}
+
+@Composable
+private fun RoomModeSelector(
+    isCreateMode: Boolean,
+    onModeSelected: (isCreateMode: Boolean) -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp)
         ) {
-            Column(
-                modifier = Modifier.padding(16.dp)
+            Text(
+                text = "Select Action",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.padding(bottom = 16.dp)
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
+                ModeButton(
+                    text = "Create Room",
+                    selected = isCreateMode,
+                    onClick = { onModeSelected(true) },
+                    modifier = Modifier.weight(1f)
+                )
+                ModeButton(
+                    text = "Join Room",
+                    selected = !isCreateMode,
+                    onClick = { onModeSelected(false) },
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ModeButton(
+    text: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Button(
+        onClick = onClick,
+        modifier = modifier,
+        colors = ButtonDefaults.buttonColors(
+            containerColor = if (selected) MaterialTheme.colorScheme.primary
+            else MaterialTheme.colorScheme.outline
+        )
+    ) {
+        Text(text)
+    }
+}
+
+@Composable
+private fun RoomForm(
+    username: String,
+    onUsernameChange: (String) -> Unit,
+    useSavedUsername: Boolean,
+    onUseSavedUsernameChange: (Boolean) -> Unit,
+    isCreateMode: Boolean,
+    roomCode: String,
+    onRoomCodeChange: (String) -> Unit,
+    isTemporary: Boolean,
+    onTemporaryChange: (Boolean) -> Unit,
+    errorMessage: String?,
+    isLoading: Boolean,
+    onSubmit: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp)
+        ) {
+            OutlinedTextField(
+                value = username,
+                onValueChange = onUsernameChange,
+                label = { Text("Username", color = MaterialTheme.colorScheme.onSurface) },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true
+            )
+
+            LabeledCheckbox(
+                checked = useSavedUsername,
+                onCheckedChange = onUseSavedUsernameChange,
+                label = "Save as default username",
+                modifier = Modifier.padding(vertical = 8.dp)
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            if (isCreateMode) {
+                LabeledCheckbox(
+                    checked = isTemporary,
+                    onCheckedChange = onTemporaryChange,
+                    label = "Temporary Room (auto-delete when creator leaves)"
+                )
+            } else {
                 OutlinedTextField(
-                    value = username,
-                    onValueChange = { username = it },
-                    label = { Text("Username", color = MaterialTheme.colorScheme.onSurface) },
+                    value = roomCode,
+                    onValueChange = onRoomCodeChange,
+                    label = { Text("Room Code", color = MaterialTheme.colorScheme.onSurface) },
+                    placeholder = { Text("e.g., ABC123") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
                 )
+            }
+            Spacer(modifier = Modifier.height(16.dp))
 
-                // Use saved username checkbox
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Checkbox(
-                        checked = useSavedUsername,
-                        onCheckedChange = {
-                            useSavedUsername = it
-                            if (it && username.isBlank()) {
-                                username = sharedPref.getString("default_username", "") ?: ""
-                            }
-                        }
-                    )
-                    Text(
-                        text = "Save as default username",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.padding(start = 8.dp)
-                    )
-                }
-
+            if (errorMessage != null) {
+                ErrorCard(message = errorMessage)
                 Spacer(modifier = Modifier.height(16.dp))
+            }
 
-                if (!isCreateMode) {
-                    OutlinedTextField(
-                        value = roomCode,
-                        onValueChange = { roomCode = it.uppercase() },
-                        label = { Text("Room Code", color = MaterialTheme.colorScheme.onSurface) },
-                        placeholder = { Text("e.g., ABC123") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-                }
-
-                if (isCreateMode) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Checkbox(
-                            checked = isTemporary,
-                            onCheckedChange = { isTemporary = it }
-                        )
-                        Text(
-                            text = "Temporary Room (auto-delete when creator leaves)",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.padding(start = 8.dp)
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(16.dp))
-                }
-
-                if (errorMessage != null) {
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.errorContainer
-                        )
-                    ) {
-                        Text(
-                            text = errorMessage,
-                            color = MaterialTheme.colorScheme.onErrorContainer,
-                            modifier = Modifier.padding(12.dp),
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(16.dp))
-                }
-
-                Button(
-                    onClick = {
-                        if (isCreateMode) {
-                            roomViewModel.createRoom(username, isTemporary)
-                        } else {
-                            roomViewModel.joinRoom(roomCode, username)
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = !isLoading && username.isNotBlank() && (isCreateMode || roomCode.isNotBlank())
-                ) {
-                    Text(
-                        text = if (isCreateMode) "Create & Join Room" else "Join Room",
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
+            Button(
+                onClick = onSubmit,
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !isLoading && username.isNotBlank() && (isCreateMode || roomCode.isNotBlank())
+            ) {
+                Text(
+                    text = if (isCreateMode) "Create & Join Room" else "Join Room",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Medium
+                )
             }
         }
+    }
+}
 
-        Spacer(modifier = Modifier.height(24.dp))
+@Composable
+private fun LabeledCheckbox(
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    label: String,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Checkbox(
+            checked = checked,
+            onCheckedChange = onCheckedChange
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.padding(start = 8.dp)
+        )
+    }
+}
 
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surface
-            )
+@Composable
+private fun AccountCard(
+    user: User?,
+    onLogout: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                authState.currentUser?.let { user ->
-                    Text(
-                        text = "Logged in as:",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                    )
-                    Text(
-                        text = "${user.firstName} ${user.lastName}",
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        fontWeight = FontWeight.Medium,
-                        modifier = Modifier.padding(bottom = 12.dp)
-                    )
-                }
+            user?.let {
+                Text(
+                    text = "Logged in as:",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                )
+                Text(
+                    text = "${it.firstName} ${it.lastName}",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier.padding(bottom = 12.dp)
+                )
+            }
 
-                OutlinedButton(
-                    onClick = {
-                        authViewModel.logout()
-                        onNavigateToLogin()
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        text = "Logout",
-                        fontSize = 16.sp
-                    )
-                }
+            OutlinedButton(
+                onClick = onLogout,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = "Logout",
+                    fontSize = 16.sp
+                )
             }
         }
     }
