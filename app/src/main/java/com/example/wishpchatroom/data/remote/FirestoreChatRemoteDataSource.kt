@@ -13,6 +13,7 @@ import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FieldPath
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.MetadataChanges
 import com.google.firebase.firestore.Query
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
@@ -37,7 +38,10 @@ class FirestoreChatRemoteDataSource @Inject constructor(
         val registration = messagesRef(roomCode)
             .orderBy("timestamp", Query.Direction.DESCENDING)
             .limit(limit)
-            .addSnapshotListener { snapshot, error ->
+            // Metadata changes are included so that a message is re-emitted once the server has
+            // confirmed it (its pending-write flag clears) even if its data did not change, such as
+            // after a reaction. They are local events and cost no reads.
+            .addSnapshotListener(MetadataChanges.INCLUDE) { snapshot, error ->
                 if (error != null) {
                     close(error)
                     return@addSnapshotListener
