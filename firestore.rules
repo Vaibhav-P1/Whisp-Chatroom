@@ -1,0 +1,101 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function room(roomCode) {
+      return get(/databases/$(database)/documents/rooms/$(roomCode)).data;
+    }
+
+    function isMember(roomCode) {
+      return signedIn() && request.auth.uid in room(roomCode).members;
+    }
+
+    function isOwner(roomCode) {
+      return signedIn() && room(roomCode).creatorUid == request.auth.uid;
+    }
+
+    function validName(value) {
+      return value is string && value.size() >= 1 && value.size() <= 50;
+    }
+
+    // User profiles: only the owner can read or write their own profile.
+    match /users/{uid} {
+      allow read: if signedIn() && request.auth.uid == uid;
+      allow create, update: if signedIn() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['firstName', 'lastName', 'email'])
+        && validName(request.resource.data.firstName)
+        && validName(request.resource.data.lastName)
+        && request.resource.data.email is string;
+      allow delete: if false;
+    }
+
+    match /rooms/{roomCode} {
+      // The room code is the secret: rooms can be fetched by code but never listed.
+      allow get: if signedIn();
+      allow list: if false;
+
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(
+             ['roomCode', 'creatorUid', 'roomOpen', 'members', 'temporary', 'timestamp'])
+        && roomCode.matches('[A-Z0-9]{6}')
+        && request.resource.data.roomCode == roomCode
+        && request.resource.data.creatorUid == request.auth.uid
+        && request.resource.data.roomOpen == true
+        && request.resource.data.temporary is bool
+        && request.resource.data.timestamp == request.time
+        && request.resource.data.members.keys().hasOnly([request.auth.uid])
+        && validName(request.resource.data.members[request.auth.uid]);
+
+      allow update: if signedIn() && (
+        // Owner closes the room.
+        (resource.data.creatorUid == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['roomOpen']))
+        ||
+        // Any signed-in user joins an open room by adding only their own uid.
+        (resource.data.roomOpen == true
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members'])
+          && request.resource.data.members.diff(resource.data.members).affectedKeys().hasOnly([request.auth.uid])
+          && request.resource.data.members.diff(resource.data.members).addedKeys().hasOnly([request.auth.uid])
+          && validName(request.resource.data.members[request.auth.uid]))
+      );
+
+      allow delete: if signedIn() && resource.data.creatorUid == request.auth.uid;
+
+      match /messages/{messageId} {
+        allow read: if isMember(roomCode);
+
+        allow create: if isMember(roomCode)
+          && room(roomCode).roomOpen == true
+          && request.resource.data.keys().hasOnly(['uid', 'username', 'messageText', 'timestamp'])
+          && request.resource.data.uid == request.auth.uid
+          && request.resource.data.username == room(roomCode).members[request.auth.uid]
+          && request.resource.data.messageText is string
+          && request.resource.data.messageText.size() >= 1
+          && request.resource.data.messageText.size() <= 2000
+          && request.resource.data.timestamp == request.time;
+
+        allow update: if false;
+        allow delete: if isOwner(roomCode);
+      }
+
+      // Presence docs are keyed by uid so a user can only write their own.
+      match /presence/{presenceId} {
+        allow read: if isMember(roomCode);
+
+        allow create, update: if isMember(roomCode)
+          && presenceId == request.auth.uid
+          && request.resource.data.keys().hasOnly(['username', 'isPresent', 'lastSeen'])
+          && request.resource.data.username == room(roomCode).members[request.auth.uid]
+          && request.resource.data.isPresent is bool
+          && request.resource.data.lastSeen == request.time;
+
+        allow delete: if signedIn() && (presenceId == request.auth.uid || isOwner(roomCode));
+      }
+    }
+  }
+}
