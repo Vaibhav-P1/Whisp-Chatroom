@@ -18,7 +18,7 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -27,7 +27,9 @@ import com.example.wishpchatroom.navigation.Screen
 import com.example.wishpchatroom.ui.theme.WishpChatRoomTheme
 import com.example.wishpchatroom.viewmodel.AuthViewModel
 import com.example.wishpchatroom.viewmodel.ChatViewModel
+import dagger.hilt.android.AndroidEntryPoint
 
+@AndroidEntryPoint
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -36,7 +38,7 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val navController = rememberNavController()
-            val authViewModel: AuthViewModel = viewModel()
+            val authViewModel: AuthViewModel = hiltViewModel()
             WishpChatRoomTheme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
@@ -132,7 +134,7 @@ fun ChatScreenWithLifecycle(
     roomCode: String,
     onNavigateBack: () -> Unit
 ) {
-    val chatViewModel: ChatViewModel = viewModel()
+    val chatViewModel: ChatViewModel = hiltViewModel()
     val lifecycleOwner = LocalLifecycleOwner.current
 
     // Presence follows the app lifecycle. Temporary rooms are NOT deleted here: backgrounding

@@ -35,7 +35,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.wishpchatroom.data.Result
 import com.example.wishpchatroom.viewmodel.AuthViewModel
 import com.example.wishpchatroom.viewmodel.RoomViewModel
@@ -46,7 +46,7 @@ fun ChatRoomScreen(
     onJoinRoom: (String) -> Unit,
     onNavigateToLogin: () -> Unit
 ) {
-    val roomViewModel: RoomViewModel = viewModel()
+    val roomViewModel: RoomViewModel = hiltViewModel()
     val context = LocalContext.current
     val sharedPref = context.getSharedPreferences("user_prefs", Context.MODE_PRIVATE)
 

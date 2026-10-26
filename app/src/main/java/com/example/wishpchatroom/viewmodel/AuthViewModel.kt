@@ -4,22 +4,17 @@ import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.wishpchatroom.data.Injection
 import com.example.wishpchatroom.data.Result
 import com.example.wishpchatroom.data.User
 import com.example.wishpchatroom.data.UserRepository
-import com.google.firebase.auth.FirebaseAuth
+import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.launch
+import javax.inject.Inject
 
-class AuthViewModel : ViewModel() {
+@HiltViewModel
+class AuthViewModel @Inject constructor(
     private val userRepository: UserRepository
-
-    init {
-        userRepository = UserRepository(
-            FirebaseAuth.getInstance(),
-            Injection.instance()
-        )
-    }
+) : ViewModel() {
 
     // Make these nullable by adding ?
     private val _authResult = MutableLiveData<Result<Boolean>?>()

@@ -59,7 +59,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.activity.compose.BackHandler
-import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.wishpchatroom.data.Message
 import com.example.wishpchatroom.viewmodel.ChatViewModel
 import kotlinx.coroutines.launch
@@ -72,7 +72,7 @@ fun ChatScreen(
     roomCode: String,
     onNavigateBack: () -> Unit
 ) {
-    val chatViewModel: ChatViewModel = viewModel()
+    val chatViewModel: ChatViewModel = hiltViewModel()
     val context = LocalContext.current
 
     var messageText by remember { mutableStateOf("") }

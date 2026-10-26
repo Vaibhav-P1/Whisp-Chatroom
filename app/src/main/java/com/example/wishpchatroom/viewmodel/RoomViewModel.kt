@@ -4,17 +4,19 @@ import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.wishpchatroom.data.Injection
 import com.example.wishpchatroom.data.Result
 import com.example.wishpchatroom.data.RoomRepository
-import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.receiveAsFlow
+import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.launch
+import javax.inject.Inject
 
-class RoomViewModel : ViewModel() {
-    private val roomRepository = RoomRepository(Injection.instance(), FirebaseAuth.getInstance())
+@HiltViewModel
+class RoomViewModel @Inject constructor(
+    private val roomRepository: RoomRepository
+) : ViewModel() {
 
     // One-shot events (a room was created/joined, or it failed). A Channel is used instead of
     // LiveData so the result is delivered once and is not replayed after rotation or navigation.

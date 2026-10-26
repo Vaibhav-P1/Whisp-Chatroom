@@ -5,15 +5,17 @@ import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.wishpchatroom.data.ChatRepository
-import com.example.wishpchatroom.data.Injection
 import com.example.wishpchatroom.data.Message
 import com.example.wishpchatroom.data.Result
-import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.ListenerRegistration
+import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.launch
+import javax.inject.Inject
 
-class ChatViewModel : ViewModel() {
-    private val chatRepository = ChatRepository(Injection.instance(), FirebaseAuth.getInstance())
+@HiltViewModel
+class ChatViewModel @Inject constructor(
+    private val chatRepository: ChatRepository
+) : ViewModel() {
 
     private var messagesListener: ListenerRegistration? = null
     private var isLeaving = false
