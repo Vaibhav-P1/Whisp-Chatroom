@@ -23,3 +23,7 @@ google-services.json
 # Private planning notes, Claude rules and changelog
 project-notes/
 
+# Firestore rules tests / emulator
+firestore-tests/node_modules/
+firestore-debug.log
+ui-debug.log
