@@ -12,6 +12,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.livedata.observeAsState
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.core.view.WindowCompat
@@ -54,7 +55,11 @@ fun NavigationGraph(
     authViewModel: AuthViewModel
 ) {
     val authResult by authViewModel.authResult.observeAsState()
-    val currentUser by authViewModel.currentUser.observeAsState()
+
+    // Decided once, synchronously, so a logged-in user never sees the signup screen on cold start.
+    val startDestination = remember {
+        if (authViewModel.isLoggedIn()) Screen.ChatRoomsScreen.route else Screen.SignupScreen.route
+    }
 
     LaunchedEffect(authResult) {
         authResult?.let { result ->
@@ -63,21 +68,15 @@ fun NavigationGraph(
                     popUpTo(Screen.SignupScreen.route) { inclusive = true }
                     popUpTo(Screen.LoginScreen.route) { inclusive = true }
                 }
-            }
-        }
-    }
-
-    LaunchedEffect(Unit) {
-        if (currentUser != null) {
-            navController.navigate(Screen.ChatRoomsScreen.route) {
-                popUpTo(Screen.SignupScreen.route) { inclusive = true }
+                // Handled: do not replay this navigation after rotation.
+                authViewModel.consumeAuthResult()
             }
         }
     }
 
     NavHost(
         navController = navController,
-        startDestination = if (currentUser != null) Screen.ChatRoomsScreen.route else Screen.SignupScreen.route
+        startDestination = startDestination
     ) {
         composable(Screen.SignupScreen.route) {
             SignUpScreen(

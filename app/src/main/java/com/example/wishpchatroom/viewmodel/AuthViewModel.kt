@@ -32,6 +32,15 @@ class AuthViewModel : ViewModel() {
         checkCurrentUser()
     }
 
+    // Firebase restores the session synchronously, so this is safe to read when choosing
+    // the start destination (the profile in currentUser still loads asynchronously).
+    fun isLoggedIn(): Boolean = userRepository.isLoggedIn()
+
+    /** Clears a handled result so it is not replayed after rotation or a later navigation. */
+    fun consumeAuthResult() {
+        _authResult.value = null
+    }
+
     private fun checkCurrentUser() {
         viewModelScope.launch {
             val user = userRepository.getCurrentUser()
