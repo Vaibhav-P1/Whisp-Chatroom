@@ -1,46 +1,46 @@
 # 🗨️ WhispChatRoom - Real-Time Chat via Joinable Rooms
 
-## 🚀 Project Overview
-WhispChatRoom is a real-time chat application built using **Firebase Realtime Database / Firestore**, where users can create or join chat rooms using a unique code. Each room persists until explicitly closed or deleted.  
-Users can chat anonymously with unique usernames per room.
----
+## Project Overview
+WhispChatRoom is an Android chat app where signed-in users create or join chat rooms with a unique 6-character room code. Messages sync in real time through **Cloud Firestore**. Room owners can close or delete a room, and a room can be marked temporary so it is removed when the creator leaves.
+
 ## Features
 
-- Create Room
-  - Enter a username
-  - Use saved username or enter a new one
-  - Generate a unique room code
-  - Check username uniqueness in the room
+- **Account**
+  - Email/password sign up and login with Firebase Authentication
+  - First and last name stored in a Firestore user profile
 
-- Join Room
-  - Enter room code
-  - Enter username
-  - Check username uniqueness in the room
-  - Load chat interface if valid
+- **Create Room**
+  - Choose a username (optionally saved as your default)
+  - Generates a unique room code, shareable via copy or the share sheet
+  - Optional temporary room
 
-- Real-Time Chat
-  - Send and receive messages instantly
-  - Messages store username, timestamp, and text
+- **Join Room**
+  - Enter a room code and username
+  - Username must be unique within the room
 
-- Room Owner Privileges
-  - Close Room (disables further messages)
-  - Delete Room (removes all data)
+- **Real-Time Chat**
+  - Messages appear instantly for everyone in the room
+  - Each message stores the sender, text and timestamp
 
-- Optional Temporary Room
-  - Auto-delete when creator exits or closes room
-
----
+- **Room Owner Privileges**
+  - Close Room (stops further messages)
+  - Delete Room (removes the room and its messages)
 
 ## Tech Stack
 
-- Firebase Realtime Database / Firestore  
-- Firebase Anonymous Auth / Local Device ID  
-- ViewModel + LiveData  
-- SharedPreferences / DataStore  
-- RecyclerView, ConstraintLayout, Material Design  
+- Kotlin, Jetpack Compose (Material 3), Navigation Compose
+- MVVM with ViewModel + LiveData
+- Firebase Authentication and Cloud Firestore
+- SharedPreferences for the saved username
+- Gradle Kotlin DSL with a version catalog (`gradle/libs.versions.toml`)
 
----
-### 📱 Screenshots
+## Build Requirements
+
+- Android Studio with **JDK 21** set as the Gradle JDK (Settings > Build Tools > Gradle)
+- Android SDK 35
+- Gradle 8.9 and Android Gradle Plugin 8.7.3 (via the wrapper and version catalog)
+
+## Screenshots
 
 <img width="442" height="965" alt="image" src="https://github.com/user-attachments/assets/10e5c427-71c3-4011-91ff-a2fd15a768aa" />
 <img width="447" height="973" alt="image" src="https://github.com/user-attachments/assets/c4ed7b04-4249-4a6e-b850-d25cf7ddd5f2" />
@@ -55,16 +55,13 @@ Users can chat anonymously with unique usernames per room.
 <img width="1727" height="787" alt="image" src="https://github.com/user-attachments/assets/0c3f1717-c6e8-4d28-b668-075fe2261da8" />
 
 
----
+## ⚠️ Setup
 
-
-### ⚠️ Important Setup Instruction
-
-To run this project, you must add your own Firebase config file.
+To run this project you must add your own Firebase config file.
 
 1. Go to https://console.firebase.google.com/
-2. Create a project and register an Android app.
-3. Download the `google-services.json` file.
-4. Place it inside the `app/` directory.
+2. Create a project and register an Android app with package name `com.example.wishpchatroom`.
+3. Enable **Email/Password** sign-in under Authentication and create a **Firestore** database.
+4. Download `google-services.json` and place it inside the `app/` directory.
 
 This file is intentionally not included in the repo for security reasons.

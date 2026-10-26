@@ -167,7 +167,7 @@ fun ChatScreenWithLifecycle(
 
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
-            // Final cleanup when leaving the screen
+
             currentUser?.let { user ->
                 chatViewModel.updateUserPresence(roomCode, user.firstName, false)
                 chatViewModel.checkAndDeleteTemporaryRoom(roomCode)
