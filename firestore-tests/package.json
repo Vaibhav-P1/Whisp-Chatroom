@@ -1,0 +1,12 @@
+{
+  "name": "wishp-firestore-rules-tests",
+  "private": true,
+  "description": "Security rules tests for firestore.rules, run against the Firestore emulator",
+  "scripts": {
+    "test": "node --test"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^3.0.4",
+    "firebase": "^10.14.1"
+  }
+}
