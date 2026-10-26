@@ -2,6 +2,7 @@ package com.example.wishpchatroom.data
 
 import com.example.wishpchatroom.data.local.MessageDao
 import com.example.wishpchatroom.data.local.MessageEntity
+import com.example.wishpchatroom.data.local.encodeReactions
 import com.example.wishpchatroom.data.local.toDomain
 import com.example.wishpchatroom.data.remote.ChatRemoteDataSource
 import com.example.wishpchatroom.data.remote.RemoteMessage
@@ -35,7 +36,12 @@ class OfflineFirstChatRepository @Inject constructor(
         }
     }
 
-    override suspend fun sendMessage(roomCode: String, messageText: String, username: String): Resource<Unit> {
+    override suspend fun sendMessage(
+        roomCode: String,
+        messageText: String,
+        username: String,
+        replyTo: ReplyRef?
+    ): Resource<Unit> {
         val uid = remote.currentUid ?: return Resource.Error("You must be logged in")
         val id = UUID.randomUUID().toString()
 
@@ -47,10 +53,13 @@ class OfflineFirstChatRepository @Inject constructor(
                 username = username,
                 messageText = messageText,
                 timestamp = System.currentTimeMillis(),
-                status = MessageStatus.SENDING
+                status = MessageStatus.SENDING,
+                replyToId = replyTo?.messageId,
+                replyToUsername = replyTo?.username,
+                replyToText = replyTo?.text
             )
         )
-        return deliver(roomCode, id, username, messageText)
+        return deliver(roomCode, id, username, messageText, replyTo)
     }
 
     override suspend fun retryMessage(roomCode: String, messageId: String): Resource<Unit> {
@@ -58,7 +67,36 @@ class OfflineFirstChatRepository @Inject constructor(
         if (message.status != MessageStatus.FAILED) return Resource.Success(Unit)
 
         messageDao.updateStatus(messageId, MessageStatus.SENDING)
-        return deliver(roomCode, messageId, message.username, message.messageText)
+        return deliver(roomCode, messageId, message.username, message.messageText, message.toDomain().replyTo)
+    }
+
+    override suspend fun editMessage(roomCode: String, messageId: String, newText: String): Resource<Unit> {
+        val result = remote.editMessage(roomCode, messageId, newText)
+        if (result is Resource.Success) messageDao.applyEdit(messageId, newText)
+        return result
+    }
+
+    override suspend fun deleteMessage(roomCode: String, messageId: String): Resource<Unit> {
+        val result = remote.deleteMessage(roomCode, messageId)
+        if (result is Resource.Success) messageDao.markDeleted(messageId)
+        return result
+    }
+
+    override suspend fun toggleReaction(roomCode: String, messageId: String, emoji: String): Resource<Unit> {
+        val uid = remote.currentUid ?: return Resource.Error("You must be logged in")
+        val message = messageDao.getById(messageId) ?: return Resource.Error("Message not found")
+
+        val reactions = message.toDomain().reactions.toMutableMap()
+        val current = reactions[emoji].orEmpty()
+        val add = uid !in current
+
+        val result = remote.setReaction(roomCode, messageId, emoji, add)
+        if (result is Resource.Success) {
+            val updated = if (add) current + uid else current - uid
+            if (updated.isEmpty()) reactions.remove(emoji) else reactions[emoji] = updated
+            messageDao.updateReactions(messageId, encodeReactions(reactions))
+        }
+        return result
     }
 
     override suspend fun hasCachedOlder(roomCode: String, shownCount: Int): Boolean =
@@ -113,9 +151,10 @@ class OfflineFirstChatRepository @Inject constructor(
         roomCode: String,
         id: String,
         username: String,
-        messageText: String
+        messageText: String,
+        replyTo: ReplyRef?
     ): Resource<Unit> {
-        val result = remote.sendMessage(roomCode, id, username, messageText)
+        val result = remote.sendMessage(roomCode, id, username, messageText, replyTo)
         messageDao.updateStatus(
             id,
             if (result is Resource.Success) MessageStatus.SENT else MessageStatus.FAILED
@@ -130,7 +169,13 @@ class OfflineFirstChatRepository @Inject constructor(
         username = username,
         messageText = messageText,
         timestamp = timestamp,
-        status = if (hasPendingWrites) MessageStatus.SENDING else MessageStatus.SENT
+        status = if (hasPendingWrites) MessageStatus.SENDING else MessageStatus.SENT,
+        replyToId = replyTo?.messageId,
+        replyToUsername = replyTo?.username,
+        replyToText = replyTo?.text,
+        edited = edited,
+        deleted = deleted,
+        reactionsJson = encodeReactions(reactions)
     )
 
     private companion object {

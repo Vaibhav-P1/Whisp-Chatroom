@@ -1,6 +1,7 @@
 package com.example.wishpchatroom.data.remote
 
 import com.example.wishpchatroom.data.Presence
+import com.example.wishpchatroom.data.ReplyRef
 import com.example.wishpchatroom.data.Resource
 import com.example.wishpchatroom.data.Room
 import kotlinx.coroutines.flow.Flow
@@ -12,7 +13,11 @@ data class RemoteMessage(
     val username: String,
     val messageText: String,
     val timestamp: Long,
-    val hasPendingWrites: Boolean
+    val hasPendingWrites: Boolean,
+    val replyTo: ReplyRef? = null,
+    val edited: Boolean = false,
+    val deleted: Boolean = false,
+    val reactions: Map<String, List<String>> = emptyMap()
 )
 
 /** Everything the chat feature needs from the network. The repository decides what to cache. */
@@ -26,7 +31,21 @@ interface ChatRemoteDataSource {
     suspend fun fetchOlderMessages(roomCode: String, beforeTimestamp: Long, limit: Long): List<RemoteMessage>
 
     /** Writes a message under a caller-chosen [id] so that retrying never creates a duplicate. */
-    suspend fun sendMessage(roomCode: String, id: String, username: String, messageText: String): Resource<Unit>
+    suspend fun sendMessage(
+        roomCode: String,
+        id: String,
+        username: String,
+        messageText: String,
+        replyTo: ReplyRef? = null
+    ): Resource<Unit>
+
+    suspend fun editMessage(roomCode: String, messageId: String, newText: String): Resource<Unit>
+
+    /** Soft delete: the document stays, its text is cleared and it is flagged as deleted. */
+    suspend fun deleteMessage(roomCode: String, messageId: String): Resource<Unit>
+
+    /** Adds or removes the current user's reaction. */
+    suspend fun setReaction(roomCode: String, messageId: String, emoji: String, add: Boolean): Resource<Unit>
 
     suspend fun getRoom(roomCode: String): Room?
 

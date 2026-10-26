@@ -2,6 +2,7 @@ package com.example.wishpchatroom.data.remote
 
 import com.example.wishpchatroom.data.FirestoreCollections
 import com.example.wishpchatroom.data.Presence
+import com.example.wishpchatroom.data.ReplyRef
 import com.example.wishpchatroom.data.Resource
 import com.example.wishpchatroom.data.Room
 import com.example.wishpchatroom.data.toUserMessage
@@ -66,19 +67,26 @@ class FirestoreChatRemoteDataSource @Inject constructor(
         roomCode: String,
         id: String,
         username: String,
-        messageText: String
+        messageText: String,
+        replyTo: ReplyRef?
     ): Resource<Unit> {
         val uid = currentUid ?: return Resource.Error("You must be logged in")
         return try {
-            // Membership and "room is open" are enforced by the security rules.
-            messagesRef(roomCode).document(id).set(
-                mapOf(
-                    "uid" to uid,
-                    "username" to username,
-                    "messageText" to messageText,
-                    "timestamp" to FieldValue.serverTimestamp()
+            val data = mutableMapOf<String, Any>(
+                "uid" to uid,
+                "username" to username,
+                "messageText" to messageText,
+                "timestamp" to FieldValue.serverTimestamp()
+            )
+            if (replyTo != null) {
+                data["replyTo"] = mapOf(
+                    "id" to replyTo.messageId,
+                    "username" to replyTo.username,
+                    "text" to replyTo.text
                 )
-            ).await()
+            }
+            // Membership and "room is open" are enforced by the security rules.
+            messagesRef(roomCode).document(id).set(data).await()
             Resource.Success(Unit)
         } catch (e: Exception) {
             // A retry of a write that did reach the server is rejected (messages cannot be
@@ -88,6 +96,46 @@ class FirestoreChatRemoteDataSource @Inject constructor(
             } else {
                 Resource.Error("Message not sent. The room may be closed.")
             }
+        }
+    }
+
+    override suspend fun editMessage(roomCode: String, messageId: String, newText: String): Resource<Unit> {
+        return try {
+            messagesRef(roomCode).document(messageId)
+                .update(mapOf("messageText" to newText, "edited" to true))
+                .await()
+            Resource.Success(Unit)
+        } catch (e: Exception) {
+            Resource.Error(e.toUserMessage("Could not edit the message."))
+        }
+    }
+
+    override suspend fun deleteMessage(roomCode: String, messageId: String): Resource<Unit> {
+        return try {
+            messagesRef(roomCode).document(messageId)
+                .update(mapOf("deleted" to true, "messageText" to ""))
+                .await()
+            Resource.Success(Unit)
+        } catch (e: Exception) {
+            Resource.Error(e.toUserMessage("Could not delete the message."))
+        }
+    }
+
+    override suspend fun setReaction(
+        roomCode: String,
+        messageId: String,
+        emoji: String,
+        add: Boolean
+    ): Resource<Unit> {
+        val uid = currentUid ?: return Resource.Error("You must be logged in")
+        return try {
+            messagesRef(roomCode).document(messageId).update(
+                FieldPath.of("reactions", emoji),
+                if (add) FieldValue.arrayUnion(uid) else FieldValue.arrayRemove(uid)
+            ).await()
+            Resource.Success(Unit)
+        } catch (e: Exception) {
+            Resource.Error(e.toUserMessage("Could not update the reaction."))
         }
     }
 
@@ -218,8 +266,33 @@ class FirestoreChatRemoteDataSource @Inject constructor(
             username = getString("username").orEmpty(),
             messageText = getString("messageText").orEmpty(),
             timestamp = timestamp?.toDate()?.time ?: System.currentTimeMillis(),
-            hasPendingWrites = metadata.hasPendingWrites()
+            hasPendingWrites = metadata.hasPendingWrites(),
+            replyTo = readReply(),
+            edited = getBoolean("edited") ?: false,
+            deleted = getBoolean("deleted") ?: false,
+            reactions = readReactions()
         )
+    }
+
+    private fun DocumentSnapshot.readReply(): ReplyRef? {
+        val reply = get("replyTo") as? Map<*, *> ?: return null
+        val messageId = reply["id"] as? String ?: return null
+        return ReplyRef(
+            messageId = messageId,
+            username = reply["username"] as? String ?: "",
+            text = reply["text"] as? String ?: ""
+        )
+    }
+
+    private fun DocumentSnapshot.readReactions(): Map<String, List<String>> {
+        val reactions = get("reactions") as? Map<*, *> ?: return emptyMap()
+        return reactions.entries
+            .mapNotNull { (emoji, uids) ->
+                val key = emoji as? String ?: return@mapNotNull null
+                key to (uids as? List<*>).orEmpty().filterIsInstance<String>()
+            }
+            .filter { (_, uids) -> uids.isNotEmpty() }
+            .toMap()
     }
 
     private companion object {

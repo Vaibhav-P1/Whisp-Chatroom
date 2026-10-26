@@ -15,7 +15,21 @@ interface ChatRepository {
     suspend fun syncMessages(roomCode: String)
 
     /** Shows the message immediately as SENDING, then delivers it and marks it SENT or FAILED. */
-    suspend fun sendMessage(roomCode: String, messageText: String, username: String): Resource<Unit>
+    suspend fun sendMessage(
+        roomCode: String,
+        messageText: String,
+        username: String,
+        replyTo: ReplyRef? = null
+    ): Resource<Unit>
+
+    /** Changes the text of one of the user's own messages and marks it as edited. */
+    suspend fun editMessage(roomCode: String, messageId: String, newText: String): Resource<Unit>
+
+    /** Removes a message's text for everyone. Allowed for its author and for the room owner. */
+    suspend fun deleteMessage(roomCode: String, messageId: String): Resource<Unit>
+
+    /** Adds the current user's [emoji] reaction to a message, or removes it if already there. */
+    suspend fun toggleReaction(roomCode: String, messageId: String, emoji: String): Resource<Unit>
 
     /** Sends a FAILED message again under the same id, so it can never be delivered twice. */
     suspend fun retryMessage(roomCode: String, messageId: String): Resource<Unit>
