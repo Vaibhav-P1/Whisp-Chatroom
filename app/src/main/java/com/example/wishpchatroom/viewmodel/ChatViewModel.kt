@@ -70,16 +70,23 @@ class ChatViewModel @Inject constructor(
         }
     }
 
-    fun sendMessage(roomCode: String, messageText: String) {
+    /** Returns false if the message was not accepted, so the caller can keep what the user typed. */
+    fun sendMessage(roomCode: String, messageText: String): Boolean {
         val username = _uiState.value.roomUsername
         if (username == null) {
             showError("Still joining the room, try again in a moment")
-            return
+            return false
+        }
+        val text = messageText.trim()
+        if (text.length > MAX_MESSAGE_LENGTH) {
+            showError("Message is too long (max $MAX_MESSAGE_LENGTH characters)")
+            return false
         }
         viewModelScope.launch {
-            val result = chatRepository.sendMessage(roomCode, messageText.trim(), username)
+            val result = chatRepository.sendMessage(roomCode, text, username)
             if (result is Resource.Error) showError(result.message)
         }
+        return true
     }
 
     /** Sends a message that failed earlier. It keeps its id, so it cannot be delivered twice. */
@@ -161,5 +168,8 @@ class ChatViewModel @Inject constructor(
     private companion object {
         // How many of the newest cached messages the chat shows.
         const val MESSAGE_WINDOW = 100
+
+        // Must match the limit enforced in firestore.rules.
+        const val MAX_MESSAGE_LENGTH = 2000
     }
 }

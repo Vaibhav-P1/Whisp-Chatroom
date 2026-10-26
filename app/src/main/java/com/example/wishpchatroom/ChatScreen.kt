@@ -134,8 +134,7 @@ fun ChatScreen(
                 chatViewModel.clearError()
             },
             onSend = {
-                if (messageText.isNotBlank()) {
-                    chatViewModel.sendMessage(roomCode, messageText)
+                if (messageText.isNotBlank() && chatViewModel.sendMessage(roomCode, messageText)) {
                     messageText = ""
                 }
             }
@@ -272,9 +271,11 @@ private fun MessageList(
 ) {
     val listState = rememberLazyListState()
 
+    // Items are: leading spacer, the messages, trailing spacer. Scrolling to the last item always
+    // reveals the end of the list, even when the newest message is taller than the screen.
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) {
-            listState.animateScrollToItem(messages.size - 1)
+            listState.animateScrollToItem(messages.size + 1)
         }
     }
 
