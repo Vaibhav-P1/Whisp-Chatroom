@@ -78,6 +78,18 @@ class OfflineFirstChatRepository @Inject constructor(
 
     override suspend fun getRoom(roomCode: String): Room? = remote.getRoom(roomCode)
 
+    override fun observeRoom(roomCode: String): Flow<Room?> = remote.observeRoom(roomCode)
+
+    override fun observePresence(roomCode: String): Flow<List<Presence>> = remote.observePresence(roomCode)
+
+    override suspend fun leaveRoom(roomCode: String): Resource<Unit> {
+        val result = remote.leaveRoom(roomCode)
+        if (result is Resource.Success) messageDao.deleteRoom(roomCode)
+        return result
+    }
+
+    override suspend fun forgetRoom(roomCode: String) = messageDao.deleteRoom(roomCode)
+
     override suspend fun closeRoom(roomCode: String): Resource<Unit> = remote.closeRoom(roomCode)
 
     override suspend fun deleteRoom(roomCode: String): Resource<Unit> {

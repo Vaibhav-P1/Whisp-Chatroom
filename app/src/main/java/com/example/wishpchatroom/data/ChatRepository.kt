@@ -31,6 +31,18 @@ interface ChatRepository {
 
     suspend fun getRoom(roomCode: String): Room?
 
+    /** Streams the room while collected. Emits null once the room no longer exists (the owner deleted it). */
+    fun observeRoom(roomCode: String): Flow<Room?>
+
+    /** Streams who is in the room and when they were last seen. Fails once the room is gone. */
+    fun observePresence(roomCode: String): Flow<List<Presence>>
+
+    /** Leaves the room for good (frees the username) and forgets its cached messages. */
+    suspend fun leaveRoom(roomCode: String): Resource<Unit>
+
+    /** Forgets cached messages of a room that no longer exists. */
+    suspend fun forgetRoom(roomCode: String)
+
     suspend fun closeRoom(roomCode: String): Resource<Unit>
 
     suspend fun deleteRoom(roomCode: String): Resource<Unit>

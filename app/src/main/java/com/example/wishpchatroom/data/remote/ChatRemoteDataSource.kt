@@ -1,5 +1,6 @@
 package com.example.wishpchatroom.data.remote
 
+import com.example.wishpchatroom.data.Presence
 import com.example.wishpchatroom.data.Resource
 import com.example.wishpchatroom.data.Room
 import kotlinx.coroutines.flow.Flow
@@ -28,6 +29,15 @@ interface ChatRemoteDataSource {
     suspend fun sendMessage(roomCode: String, id: String, username: String, messageText: String): Resource<Unit>
 
     suspend fun getRoom(roomCode: String): Room?
+
+    /** Streams the room document while collected. Emits null if the room no longer exists. */
+    fun observeRoom(roomCode: String): Flow<Room?>
+
+    /** Streams the presence documents of a room while collected. */
+    fun observePresence(roomCode: String): Flow<List<Presence>>
+
+    /** Removes the current user from the room's members. The owner cannot leave. */
+    suspend fun leaveRoom(roomCode: String): Resource<Unit>
 
     suspend fun closeRoom(roomCode: String): Resource<Unit>
 

@@ -1,6 +1,7 @@
 package com.example.wishpchatroom.data.remote
 
 import com.example.wishpchatroom.data.FirestoreCollections
+import com.example.wishpchatroom.data.Presence
 import com.example.wishpchatroom.data.Resource
 import com.example.wishpchatroom.data.Room
 import com.example.wishpchatroom.data.toUserMessage
@@ -8,6 +9,7 @@ import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.CollectionReference
 import com.google.firebase.firestore.DocumentSnapshot
+import com.google.firebase.firestore.FieldPath
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
@@ -94,6 +96,60 @@ class FirestoreChatRemoteDataSource @Inject constructor(
             roomRef(roomCode).get().await().toObject(Room::class.java)
         } catch (e: Exception) {
             null
+        }
+    }
+
+    override fun observeRoom(roomCode: String): Flow<Room?> = callbackFlow {
+        val registration = roomRef(roomCode).addSnapshotListener { snapshot, error ->
+            if (error != null) {
+                close(error)
+                return@addSnapshotListener
+            }
+            if (snapshot != null) {
+                trySend(if (snapshot.exists()) snapshot.toObject(Room::class.java) else null)
+            }
+        }
+        awaitClose { registration.remove() }
+    }
+
+    override fun observePresence(roomCode: String): Flow<List<Presence>> = callbackFlow {
+        val registration = roomRef(roomCode).collection(FirestoreCollections.PRESENCE)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    close(error)
+                    return@addSnapshotListener
+                }
+                if (snapshot != null) {
+                    trySend(
+                        snapshot.documents.map { doc ->
+                            Presence(
+                                uid = doc.id,
+                                isPresent = doc.getBoolean("isPresent") ?: false,
+                                lastSeen = doc.getTimestamp(
+                                    "lastSeen",
+                                    DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
+                                )?.toDate()?.time ?: 0L
+                            )
+                        }
+                    )
+                }
+            }
+        awaitClose { registration.remove() }
+    }
+
+    override suspend fun leaveRoom(roomCode: String): Resource<Unit> {
+        val uid = currentUid ?: return Resource.Error("You must be logged in")
+        return try {
+            // Presence first: once the user is no longer a member the rules would reject this delete.
+            try {
+                roomRef(roomCode).collection(FirestoreCollections.PRESENCE).document(uid).delete().await()
+            } catch (e: Exception) {
+                // Presence is best effort; leaving must still go through.
+            }
+            roomRef(roomCode).update(FieldPath.of("members", uid), FieldValue.delete()).await()
+            Resource.Success(Unit)
+        } catch (e: Exception) {
+            Resource.Error(e.toUserMessage("Could not leave the room."))
         }
     }
 

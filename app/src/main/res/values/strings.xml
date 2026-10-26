@@ -34,6 +34,21 @@
     <!-- Chat -->
     <string name="room_title">Room: %1$s</string>
     <string name="owner_label">(Owner)</string>
+    <string name="ok">OK</string>
+    <string name="members_title">Members (%1$d)</string>
+    <string name="members_content_description">Members</string>
+    <string name="more_options">More options</string>
+    <string name="close_room">Close room</string>
+    <string name="leave_room">Leave room</string>
+    <string name="leave_room_message">You will be removed from this room and your username will be free for someone else. You can join again with the room code.</string>
+    <string name="room_closed_banner">The owner closed this room. You can read the history, but no new messages can be sent.</string>
+    <string name="room_closed_hint">Room is closed</string>
+    <string name="room_deleted_title">Room deleted</string>
+    <string name="room_deleted_message">The owner deleted this room, so it is no longer available.</string>
+    <string name="member_you">%1$s (you)</string>
+    <string name="member_owner">Owner</string>
+    <string name="member_online">Online</string>
+    <string name="member_offline">Offline</string>
     <string name="back">Back</string>
     <string name="copy_room_code">Copy Room Code</string>
     <string name="share_room_code">Share Room Code</string>

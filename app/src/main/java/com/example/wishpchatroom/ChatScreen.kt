@@ -5,6 +5,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -30,21 +31,22 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Share
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -66,6 +68,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.wishpchatroom.data.Message
 import com.example.wishpchatroom.data.MessageStatus
 import com.example.wishpchatroom.viewmodel.ChatViewModel
+import com.example.wishpchatroom.viewmodel.RoomStatus
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -79,8 +82,11 @@ fun ChatScreen(
 
     var messageText by remember { mutableStateOf("") }
     var showDeleteDialog by remember { mutableStateOf(false) }
+    var showMembers by remember { mutableStateOf(false) }
+    var showLeaveDialog by remember { mutableStateOf(false) }
 
     val uiState by chatViewModel.uiState.collectAsStateWithLifecycle()
+    val isRoomOpen = uiState.roomStatus == RoomStatus.OPEN
 
     LaunchedEffect(roomCode) {
         chatViewModel.loadRoom(roomCode)
@@ -100,6 +106,34 @@ fun ChatScreen(
         )
     }
 
+    if (showMembers) {
+        MembersDialog(
+            members = uiState.members,
+            isOwner = uiState.isOwner,
+            onLeave = {
+                showMembers = false
+                showLeaveDialog = true
+            },
+            onDismiss = { showMembers = false }
+        )
+    }
+
+    if (showLeaveDialog) {
+        LeaveRoomDialog(
+            onConfirm = {
+                showLeaveDialog = false
+                chatViewModel.leaveRoomPermanently(roomCode, onNavigateBack)
+            },
+            onDismiss = { showLeaveDialog = false }
+        )
+    }
+
+    if (uiState.roomStatus == RoomStatus.DELETED) {
+        RoomDeletedDialog(
+            onConfirm = { chatViewModel.acknowledgeRoomDeleted(roomCode, onNavigateBack) }
+        )
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -110,10 +144,24 @@ fun ChatScreen(
         ChatTopBar(
             roomCode = roomCode,
             isRoomOwner = uiState.isOwner,
+            memberCount = uiState.members.size,
             onBack = { chatViewModel.leaveRoom(roomCode, onNavigateBack) },
+            onMembers = { showMembers = true },
             onClose = { chatViewModel.closeRoom(roomCode, onNavigateBack) },
             onDelete = { showDeleteDialog = true }
         )
+
+        if (uiState.roomStatus == RoomStatus.CLOSED) {
+            Text(
+                text = stringResource(R.string.room_closed_banner),
+                color = MaterialTheme.colorScheme.onErrorContainer,
+                fontSize = 12.sp,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.errorContainer)
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+            )
+        }
 
         MessageList(
             messages = uiState.messages,
@@ -135,6 +183,7 @@ fun ChatScreen(
 
         MessageInput(
             text = messageText,
+            enabled = isRoomOpen,
             onTextChange = {
                 messageText = it
                 chatViewModel.clearError()
@@ -148,38 +197,19 @@ fun ChatScreen(
     }
 }
 
-@Composable
-private fun DeleteRoomDialog(
-    onConfirm: () -> Unit,
-    onDismiss: () -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.delete_room)) },
-        text = { Text(stringResource(R.string.delete_room_message)) },
-        confirmButton = {
-            TextButton(onClick = onConfirm) {
-                Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error)
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.cancel))
-            }
-        }
-    )
-}
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ChatTopBar(
     roomCode: String,
     isRoomOwner: Boolean,
+    memberCount: Int,
     onBack: () -> Unit,
+    onMembers: () -> Unit,
     onClose: () -> Unit,
     onDelete: () -> Unit
 ) {
     val context = LocalContext.current
+    var menuExpanded by remember { mutableStateOf(false) }
     // Resolved up front because the click handlers below are not composable.
     val roomCodeLabel = stringResource(R.string.room_code)
     val shareTitle = stringResource(R.string.share_room_code)
@@ -212,52 +242,71 @@ private fun ChatTopBar(
             }
         },
         actions = {
-            IconButton(
-                onClick = {
-                    val clipboardManager = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                    clipboardManager.setPrimaryClip(ClipData.newPlainText(roomCodeLabel, roomCode))
-                }
-            ) {
+            // Shows who is in the room (and who is online); the count is part of the description
+            // so screen readers announce it too.
+            IconButton(onClick = onMembers) {
                 Icon(
-                    Icons.Default.ContentCopy,
-                    contentDescription = stringResource(R.string.copy_room_code),
+                    Icons.Default.People,
+                    contentDescription = stringResource(R.string.members_title, memberCount),
                     tint = MaterialTheme.colorScheme.onPrimary
                 )
             }
 
-            IconButton(
-                onClick = {
-                    val shareIntent = Intent().apply {
-                        action = Intent.ACTION_SEND
-                        putExtra(Intent.EXTRA_TEXT, shareMessage)
-                        type = "text/plain"
+            IconButton(onClick = { menuExpanded = true }) {
+                Icon(
+                    Icons.Default.MoreVert,
+                    contentDescription = stringResource(R.string.more_options),
+                    tint = MaterialTheme.colorScheme.onPrimary
+                )
+            }
+
+            DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.copy_room_code)) },
+                    leadingIcon = { Icon(Icons.Default.ContentCopy, contentDescription = null) },
+                    onClick = {
+                        menuExpanded = false
+                        val clipboardManager = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        clipboardManager.setPrimaryClip(ClipData.newPlainText(roomCodeLabel, roomCode))
                     }
-                    context.startActivity(Intent.createChooser(shareIntent, shareTitle))
-                }
-            ) {
-                Icon(
-                    Icons.Default.Share,
-                    contentDescription = stringResource(R.string.share_room_code),
-                    tint = MaterialTheme.colorScheme.onPrimary
                 )
-            }
-
-            if (isRoomOwner) {
-                OutlinedButton(
-                    onClick = onClose,
-                    modifier = Modifier.padding(horizontal = 4.dp),
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = MaterialTheme.colorScheme.onPrimary
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.share_room_code)) },
+                    leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) },
+                    onClick = {
+                        menuExpanded = false
+                        val shareIntent = Intent().apply {
+                            action = Intent.ACTION_SEND
+                            putExtra(Intent.EXTRA_TEXT, shareMessage)
+                            type = "text/plain"
+                        }
+                        context.startActivity(Intent.createChooser(shareIntent, shareTitle))
+                    }
+                )
+                if (isRoomOwner) {
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.close_room)) },
+                        leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
+                        onClick = {
+                            menuExpanded = false
+                            onClose()
+                        }
                     )
-                ) {
-                    Text(stringResource(R.string.close), fontSize = 12.sp)
-                }
-
-                IconButton(onClick = onDelete) {
-                    Icon(
-                        Icons.Default.Delete,
-                        contentDescription = stringResource(R.string.delete_room),
-                        tint = MaterialTheme.colorScheme.onPrimary
+                    DropdownMenuItem(
+                        text = {
+                            Text(stringResource(R.string.delete_room), color = MaterialTheme.colorScheme.error)
+                        },
+                        leadingIcon = {
+                            Icon(
+                                Icons.Default.Delete,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error
+                            )
+                        },
+                        onClick = {
+                            menuExpanded = false
+                            onDelete()
+                        }
                     )
                 }
             }
@@ -330,6 +379,7 @@ private fun MessageList(
 @Composable
 private fun MessageInput(
     text: String,
+    enabled: Boolean,
     onTextChange: (String) -> Unit,
     onSend: () -> Unit
 ) {
@@ -348,9 +398,10 @@ private fun MessageInput(
             OutlinedTextField(
                 value = text,
                 onValueChange = onTextChange,
+                enabled = enabled,
                 placeholder = {
                     Text(
-                        stringResource(R.string.message_hint),
+                        stringResource(if (enabled) R.string.message_hint else R.string.room_closed_hint),
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                     )
                 },
@@ -360,7 +411,7 @@ private fun MessageInput(
             Spacer(modifier = Modifier.width(8.dp))
             Button(
                 onClick = onSend,
-                enabled = text.isNotBlank(),
+                enabled = enabled && text.isNotBlank(),
                 modifier = Modifier.height(56.dp),
                 shape = RoundedCornerShape(28.dp)
             ) {

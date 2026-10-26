@@ -4,20 +4,37 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.wishpchatroom.data.ChatRepository
 import com.example.wishpchatroom.data.Message
+import com.example.wishpchatroom.data.Presence
 import com.example.wishpchatroom.data.Resource
+import com.example.wishpchatroom.data.Room
 import com.example.wishpchatroom.data.toUserMessage
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+
+enum class RoomStatus { OPEN, CLOSED, DELETED }
+
+data class Member(
+    val uid: String,
+    val username: String,
+    val isOwner: Boolean,
+    val isYou: Boolean,
+    val isOnline: Boolean
+)
 
 data class ChatUiState(
     val messages: List<Message> = emptyList(),
@@ -27,7 +44,9 @@ data class ChatUiState(
     val errorMessage: String? = null,
     // False once the server reported that nothing older exists than what is cached.
     val hasMoreOlder: Boolean = true,
-    val isLoadingOlder: Boolean = false
+    val isLoadingOlder: Boolean = false,
+    val roomStatus: RoomStatus = RoomStatus.OPEN,
+    val members: List<Member> = emptyList()
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -41,6 +60,8 @@ class ChatViewModel @Inject constructor(
 
     private var messagesJob: Job? = null
     private var syncJob: Job? = null
+    private var roomJob: Job? = null
+    private var heartbeatJob: Job? = null
     private var isLeaving = false
 
     // How many of the newest cached messages are shown. Grows as the user scrolls back through history.
@@ -48,20 +69,64 @@ class ChatViewModel @Inject constructor(
 
     val currentUid: String? get() = chatRepository.currentUid
 
+    /** Starts following the room: its status (open, closed, deleted), its members and who is online. */
     fun loadRoom(roomCode: String) {
-        viewModelScope.launch {
-            val room = chatRepository.getRoom(roomCode) ?: return@launch
-            _uiState.update {
-                it.copy(
-                    isOwner = room.creatorUid == chatRepository.currentUid,
-                    roomUsername = room.members[chatRepository.currentUid]
+        roomJob?.cancel()
+        roomJob = viewModelScope.launch {
+            // Presence is a nice-to-have: if its listener fails (for example because the room was just
+            // deleted) the member list simply shows everyone as offline.
+            val presence = chatRepository.observePresence(roomCode)
+                .catch { emit(emptyList()) }
+                .onStart { emit(emptyList()) }
+
+            combine(chatRepository.observeRoom(roomCode), presence, ticker()) { room, presenceList, now ->
+                applyRoom(room, presenceList, now)
+            }
+                .catch { e -> showError(e.toUserMessage("Could not load room details.")) }
+                .collect { }
+        }
+    }
+
+    private fun applyRoom(room: Room?, presence: List<Presence>, now: Long) {
+        if (room == null) {
+            // Not an error for the user who is deleting the room themselves.
+            if (!isLeaving) _uiState.update { it.copy(roomStatus = RoomStatus.DELETED) }
+            return
+        }
+
+        val uid = chatRepository.currentUid
+        val presenceByUid = presence.associateBy { it.uid }
+        val members = room.members
+            .map { (memberUid, username) ->
+                val seen = presenceByUid[memberUid]
+                Member(
+                    uid = memberUid,
+                    username = username,
+                    isOwner = memberUid == room.creatorUid,
+                    isYou = memberUid == uid,
+                    isOnline = memberUid == uid ||
+                        (seen != null && seen.isPresent && now - seen.lastSeen < ONLINE_TIMEOUT_MS)
                 )
             }
+            .sortedWith(
+                compareByDescending<Member> { it.isYou }
+                    .thenByDescending { it.isOnline }
+                    .thenBy { it.username.lowercase() }
+            )
+
+        _uiState.update {
+            it.copy(
+                isOwner = room.creatorUid == uid,
+                roomUsername = room.members[uid],
+                roomStatus = if (room.roomOpen) RoomStatus.OPEN else RoomStatus.CLOSED,
+                members = members
+            )
         }
     }
 
     fun loadMessages(roomCode: String) {
-        stopListening()
+        messagesJob?.cancel()
+        syncJob?.cancel()
         // The UI reads the local cache; the sync job keeps that cache up to date from the server.
         messagesJob = viewModelScope.launch {
             messageLimit
@@ -75,7 +140,10 @@ class ChatViewModel @Inject constructor(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                showError(e.toUserMessage("Could not load messages."))
+                // Expected when the room was just deleted; the room status already tells the user.
+                if (_uiState.value.roomStatus != RoomStatus.DELETED && !isLeaving) {
+                    showError(e.toUserMessage("Could not load messages."))
+                }
             }
         }
     }
@@ -158,10 +226,15 @@ class ChatViewModel @Inject constructor(
 
     fun deleteRoom(roomCode: String, onDone: () -> Unit) {
         viewModelScope.launch {
+            isLeaving = true
             stopListening()
             val result = chatRepository.deleteRoom(roomCode)
             if (result is Resource.Error) {
+                // Deleting failed, so the user is still in the room: resume following it.
+                isLeaving = false
                 showError(result.message)
+                loadRoom(roomCode)
+                loadMessages(roomCode)
                 return@launch
             }
             onDone()
@@ -173,6 +246,34 @@ class ChatViewModel @Inject constructor(
         viewModelScope.launch { leaveRoomInternal(roomCode, onDone) }
     }
 
+    /** Leaves the room for good: the username is freed and the room is forgotten on this device. */
+    fun leaveRoomPermanently(roomCode: String, onDone: () -> Unit) {
+        viewModelScope.launch {
+            if (isLeaving) return@launch
+            isLeaving = true
+            stopListening()
+            when (val result = chatRepository.leaveRoom(roomCode)) {
+                is Resource.Success -> onDone()
+                is Resource.Error -> {
+                    isLeaving = false
+                    showError(result.message)
+                    loadRoom(roomCode)
+                    loadMessages(roomCode)
+                }
+            }
+        }
+    }
+
+    /** The owner deleted the room while the user was in it: forget it and go back. */
+    fun acknowledgeRoomDeleted(roomCode: String, onDone: () -> Unit) {
+        viewModelScope.launch {
+            isLeaving = true
+            stopListening()
+            chatRepository.forgetRoom(roomCode)
+            onDone()
+        }
+    }
+
     private suspend fun leaveRoomInternal(roomCode: String, onDone: () -> Unit) {
         if (isLeaving) return
         isLeaving = true
@@ -182,10 +283,21 @@ class ChatViewModel @Inject constructor(
         onDone()
     }
 
+    /**
+     * Follows the app lifecycle. While the chat is in the foreground a heartbeat refreshes the
+     * presence every minute (members count as offline when it stops), at a cost of one write a minute.
+     */
     fun updateUserPresence(roomCode: String, isPresent: Boolean) {
         // Popping the screen fires lifecycle events after the room may already be deleted.
         if (isLeaving) return
-        viewModelScope.launch { updatePresenceInternal(roomCode, isPresent) }
+        heartbeatJob?.cancel()
+        heartbeatJob = viewModelScope.launch {
+            updatePresenceInternal(roomCode, isPresent)
+            while (isPresent) {
+                delay(HEARTBEAT_MS)
+                updatePresenceInternal(roomCode, true)
+            }
+        }
     }
 
     private suspend fun updatePresenceInternal(roomCode: String, isPresent: Boolean) {
@@ -195,17 +307,29 @@ class ChatViewModel @Inject constructor(
         chatRepository.updateUserPresence(roomCode, username, isPresent)
     }
 
-    // Cancelling the sync detaches the Firestore listener before the room can be deleted,
-    // otherwise the listener reports a permission error.
+    // Cancelling the listeners before the room can be deleted avoids permission errors from
+    // listeners whose room just disappeared.
     private fun stopListening() {
         messagesJob?.cancel()
         syncJob?.cancel()
+        roomJob?.cancel()
+        heartbeatJob?.cancel()
         messagesJob = null
         syncJob = null
+        roomJob = null
+        heartbeatJob = null
     }
 
     private fun showError(message: String) {
         _uiState.update { it.copy(errorMessage = message) }
+    }
+
+    // Emits the current time now and every few seconds, so "online" decays without new presence data.
+    private fun ticker(): Flow<Long> = flow {
+        while (true) {
+            emit(System.currentTimeMillis())
+            delay(TICK_MS)
+        }
     }
 
     private companion object {
@@ -217,5 +341,10 @@ class ChatViewModel @Inject constructor(
 
         // Must match the limit enforced in firestore.rules.
         const val MAX_MESSAGE_LENGTH = 2000
+
+        // A foreground chat refreshes presence this often; a member is online if seen within the timeout.
+        const val HEARTBEAT_MS = 60_000L
+        const val ONLINE_TIMEOUT_MS = 150_000L
+        const val TICK_MS = 30_000L
     }
 }
