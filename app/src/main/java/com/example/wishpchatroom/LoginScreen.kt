@@ -12,6 +12,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -42,8 +43,8 @@ fun LoginScreen(
     AuthScreenLayout {
         AuthHeader(
             icon = { Text(text = "💬", fontSize = 40.sp) },
-            title = "Welcome Back!",
-            subtitle = "Sign in to continue to WishP Chat",
+            title = stringResource(R.string.auth_welcome_back),
+            subtitle = stringResource(R.string.auth_login_subtitle),
             large = true
         )
 
@@ -51,7 +52,7 @@ fun LoginScreen(
             AuthTextField(
                 value = email,
                 onValueChange = { email = it },
-                label = "Email Address",
+                label = stringResource(R.string.email_address),
                 icon = Icons.Default.Email
             )
 
@@ -65,7 +66,7 @@ fun LoginScreen(
             Spacer(modifier = Modifier.height(8.dp))
 
             LoadingButton(
-                text = "Sign In",
+                text = stringResource(R.string.sign_in),
                 isLoading = uiState.isLoading,
                 enabled = !uiState.isLoading && canSubmit,
                 onClick = { if (canSubmit) authViewModel.login(email, password) }
@@ -73,8 +74,8 @@ fun LoginScreen(
         }
 
         AuthFooterLink(
-            prompt = "Don't have an account?",
-            action = "Sign Up",
+            prompt = stringResource(R.string.auth_no_account),
+            action = stringResource(R.string.sign_up),
             onClick = onNavigateToSignUp,
             topPadding = 32.dp
         )

@@ -29,6 +29,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -81,7 +82,7 @@ fun ChatRoomScreen(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text(
-            text = "WishP Chat Room",
+            text = stringResource(R.string.app_title),
             fontSize = 28.sp,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.primary,
@@ -150,7 +151,7 @@ private fun RoomModeSelector(
             modifier = Modifier.padding(16.dp)
         ) {
             Text(
-                text = "Select Action",
+                text = stringResource(R.string.select_action),
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.padding(bottom = 16.dp)
@@ -161,13 +162,13 @@ private fun RoomModeSelector(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 ModeButton(
-                    text = "Create Room",
+                    text = stringResource(R.string.create_room),
                     selected = isCreateMode,
                     onClick = { onModeSelected(true) },
                     modifier = Modifier.weight(1f)
                 )
                 ModeButton(
-                    text = "Join Room",
+                    text = stringResource(R.string.join_room),
                     selected = !isCreateMode,
                     onClick = { onModeSelected(false) },
                     modifier = Modifier.weight(1f)
@@ -224,7 +225,7 @@ private fun RoomForm(
             OutlinedTextField(
                 value = username,
                 onValueChange = onUsernameChange,
-                label = { Text("Username", color = MaterialTheme.colorScheme.onSurface) },
+                label = { Text(stringResource(R.string.username), color = MaterialTheme.colorScheme.onSurface) },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true
             )
@@ -232,7 +233,7 @@ private fun RoomForm(
             LabeledCheckbox(
                 checked = useSavedUsername,
                 onCheckedChange = onUseSavedUsernameChange,
-                label = "Save as default username",
+                label = stringResource(R.string.save_default_username),
                 modifier = Modifier.padding(vertical = 8.dp)
             )
 
@@ -242,14 +243,14 @@ private fun RoomForm(
                 LabeledCheckbox(
                     checked = isTemporary,
                     onCheckedChange = onTemporaryChange,
-                    label = "Temporary Room (auto-delete when creator leaves)"
+                    label = stringResource(R.string.temporary_room)
                 )
             } else {
                 OutlinedTextField(
                     value = roomCode,
                     onValueChange = onRoomCodeChange,
-                    label = { Text("Room Code", color = MaterialTheme.colorScheme.onSurface) },
-                    placeholder = { Text("e.g., ABC123") },
+                    label = { Text(stringResource(R.string.room_code), color = MaterialTheme.colorScheme.onSurface) },
+                    placeholder = { Text(stringResource(R.string.room_code_hint)) },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
                 )
@@ -267,7 +268,7 @@ private fun RoomForm(
                 enabled = !isLoading && username.isNotBlank() && (isCreateMode || roomCode.isNotBlank())
             ) {
                 Text(
-                    text = if (isCreateMode) "Create & Join Room" else "Join Room",
+                    text = if (isCreateMode) stringResource(R.string.create_and_join_room) else stringResource(R.string.join_room),
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Medium
                 )
@@ -318,7 +319,7 @@ private fun AccountCard(
         ) {
             user?.let {
                 Text(
-                    text = "Logged in as:",
+                    text = stringResource(R.string.logged_in_as),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                 )
@@ -336,7 +337,7 @@ private fun AccountCard(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(
-                    text = "Logout",
+                    text = stringResource(R.string.logout),
                     fontSize = 16.sp
                 )
             }

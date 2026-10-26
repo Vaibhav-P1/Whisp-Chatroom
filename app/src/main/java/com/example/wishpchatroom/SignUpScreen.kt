@@ -15,6 +15,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.wishpchatroom.ui.components.AuthFooterLink
@@ -54,29 +55,29 @@ fun SignUpScreen(
                     tint = MaterialTheme.colorScheme.onPrimaryContainer
                 )
             },
-            title = "Create Account",
-            subtitle = "Join WishP Chat Room today"
+            title = stringResource(R.string.create_account),
+            subtitle = stringResource(R.string.auth_signup_subtitle)
         )
 
         AuthFormCard(fieldSpacing = 16.dp) {
             AuthTextField(
                 value = firstName,
                 onValueChange = { firstName = it },
-                label = "First Name",
+                label = stringResource(R.string.first_name),
                 icon = Icons.Default.Person
             )
 
             AuthTextField(
                 value = lastName,
                 onValueChange = { lastName = it },
-                label = "Last Name",
+                label = stringResource(R.string.last_name),
                 icon = Icons.Default.Person
             )
 
             AuthTextField(
                 value = email,
                 onValueChange = { email = it },
-                label = "Email Address",
+                label = stringResource(R.string.email_address),
                 icon = Icons.Default.Email
             )
 
@@ -90,7 +91,7 @@ fun SignUpScreen(
             Spacer(modifier = Modifier.height(8.dp))
 
             LoadingButton(
-                text = "Create Account",
+                text = stringResource(R.string.create_account),
                 isLoading = uiState.isLoading,
                 enabled = !uiState.isLoading && canSubmit,
                 onClick = {
@@ -100,8 +101,8 @@ fun SignUpScreen(
         }
 
         AuthFooterLink(
-            prompt = "Already have an account?",
-            action = "Sign In",
+            prompt = stringResource(R.string.auth_have_account),
+            action = stringResource(R.string.sign_in),
             onClick = onNavigateToLogin,
             topPadding = 24.dp
         )

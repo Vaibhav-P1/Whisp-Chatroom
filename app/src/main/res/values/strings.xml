@@ -1,3 +1,48 @@
 <resources>
     <string name="app_name">WishpChatRoom</string>
+
+    <!-- Auth -->
+    <string name="auth_welcome_back">Welcome Back!</string>
+    <string name="auth_login_subtitle">Sign in to continue to WishP Chat</string>
+    <string name="auth_signup_subtitle">Join WishP Chat Room today</string>
+    <string name="auth_no_account">Don\'t have an account?</string>
+    <string name="auth_have_account">Already have an account?</string>
+    <string name="create_account">Create Account</string>
+    <string name="sign_in">Sign In</string>
+    <string name="sign_up">Sign Up</string>
+    <string name="first_name">First Name</string>
+    <string name="last_name">Last Name</string>
+    <string name="email_address">Email Address</string>
+    <string name="password">Password</string>
+    <string name="show_password">Show password</string>
+    <string name="hide_password">Hide password</string>
+
+    <!-- Rooms -->
+    <string name="app_title">WishP Chat Room</string>
+    <string name="select_action">Select Action</string>
+    <string name="create_room">Create Room</string>
+    <string name="join_room">Join Room</string>
+    <string name="create_and_join_room">Create &amp; Join Room</string>
+    <string name="username">Username</string>
+    <string name="save_default_username">Save as default username</string>
+    <string name="temporary_room">Temporary Room (auto-delete when creator leaves)</string>
+    <string name="room_code">Room Code</string>
+    <string name="room_code_hint">e.g., ABC123</string>
+    <string name="logged_in_as">Logged in as:</string>
+    <string name="logout">Logout</string>
+
+    <!-- Chat -->
+    <string name="room_title">Room: %1$s</string>
+    <string name="owner_label">(Owner)</string>
+    <string name="back">Back</string>
+    <string name="copy_room_code">Copy Room Code</string>
+    <string name="share_room_code">Share Room Code</string>
+    <string name="share_room_message">Join my chat room with code: %1$s</string>
+    <string name="close">Close</string>
+    <string name="delete_room">Delete Room</string>
+    <string name="delete_room_message">Are you sure you want to permanently delete this room? This action cannot be undone.</string>
+    <string name="delete">Delete</string>
+    <string name="cancel">Cancel</string>
+    <string name="message_hint">Type a message...</string>
+    <string name="send">Send</string>
 </resources>

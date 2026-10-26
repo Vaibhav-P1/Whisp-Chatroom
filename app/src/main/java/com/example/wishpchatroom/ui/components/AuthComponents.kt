@@ -1,5 +1,6 @@
 package com.example.wishpchatroom.ui.components
 
+import com.example.wishpchatroom.R
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -38,6 +39,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -179,7 +181,7 @@ fun AuthTextField(
 fun AuthPasswordField(
     value: String,
     onValueChange: (String) -> Unit,
-    label: String = "Password"
+    label: String = stringResource(R.string.password)
 ) {
     var passwordVisible by remember { mutableStateOf(false) }
 
@@ -192,7 +194,7 @@ fun AuthPasswordField(
             IconButton(onClick = { passwordVisible = !passwordVisible }) {
                 Icon(
                     imageVector = if (passwordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
-                    contentDescription = if (passwordVisible) "Hide password" else "Show password",
+                    contentDescription = if (passwordVisible) stringResource(R.string.hide_password) else stringResource(R.string.show_password),
                     tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                 )
             }

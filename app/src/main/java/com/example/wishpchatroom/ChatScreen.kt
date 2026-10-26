@@ -51,6 +51,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -145,16 +146,16 @@ private fun DeleteRoomDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Delete Room") },
-        text = { Text("Are you sure you want to permanently delete this room? This action cannot be undone.") },
+        title = { Text(stringResource(R.string.delete_room)) },
+        text = { Text(stringResource(R.string.delete_room_message)) },
         confirmButton = {
             TextButton(onClick = onConfirm) {
-                Text("Delete", color = MaterialTheme.colorScheme.error)
+                Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error)
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(stringResource(R.string.cancel))
             }
         }
     )
@@ -170,18 +171,22 @@ private fun ChatTopBar(
     onDelete: () -> Unit
 ) {
     val context = LocalContext.current
+    // Resolved up front because the click handlers below are not composable.
+    val roomCodeLabel = stringResource(R.string.room_code)
+    val shareTitle = stringResource(R.string.share_room_code)
+    val shareMessage = stringResource(R.string.share_room_message, roomCode)
 
     TopAppBar(
         title = {
             Column {
                 Text(
-                    text = "Room: $roomCode",
+                    text = stringResource(R.string.room_title, roomCode),
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onPrimary
                 )
                 if (isRoomOwner) {
                     Text(
-                        text = "(Owner)",
+                        text = stringResource(R.string.owner_label),
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f)
                     )
@@ -192,7 +197,7 @@ private fun ChatTopBar(
             IconButton(onClick = onBack) {
                 Icon(
                     Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "Back",
+                    contentDescription = stringResource(R.string.back),
                     tint = MaterialTheme.colorScheme.onPrimary
                 )
             }
@@ -201,12 +206,12 @@ private fun ChatTopBar(
             IconButton(
                 onClick = {
                     val clipboardManager = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                    clipboardManager.setPrimaryClip(ClipData.newPlainText("Room Code", roomCode))
+                    clipboardManager.setPrimaryClip(ClipData.newPlainText(roomCodeLabel, roomCode))
                 }
             ) {
                 Icon(
                     Icons.Default.ContentCopy,
-                    contentDescription = "Copy Room Code",
+                    contentDescription = stringResource(R.string.copy_room_code),
                     tint = MaterialTheme.colorScheme.onPrimary
                 )
             }
@@ -215,15 +220,15 @@ private fun ChatTopBar(
                 onClick = {
                     val shareIntent = Intent().apply {
                         action = Intent.ACTION_SEND
-                        putExtra(Intent.EXTRA_TEXT, "Join my chat room with code: $roomCode")
+                        putExtra(Intent.EXTRA_TEXT, shareMessage)
                         type = "text/plain"
                     }
-                    context.startActivity(Intent.createChooser(shareIntent, "Share Room Code"))
+                    context.startActivity(Intent.createChooser(shareIntent, shareTitle))
                 }
             ) {
                 Icon(
                     Icons.Default.Share,
-                    contentDescription = "Share Room Code",
+                    contentDescription = stringResource(R.string.share_room_code),
                     tint = MaterialTheme.colorScheme.onPrimary
                 )
             }
@@ -236,13 +241,13 @@ private fun ChatTopBar(
                         contentColor = MaterialTheme.colorScheme.onPrimary
                     )
                 ) {
-                    Text("Close", fontSize = 12.sp)
+                    Text(stringResource(R.string.close), fontSize = 12.sp)
                 }
 
                 IconButton(onClick = onDelete) {
                     Icon(
                         Icons.Default.Delete,
-                        contentDescription = "Delete Room",
+                        contentDescription = stringResource(R.string.delete_room),
                         tint = MaterialTheme.colorScheme.onPrimary
                     )
                 }
@@ -309,7 +314,7 @@ private fun MessageInput(
                 onValueChange = onTextChange,
                 placeholder = {
                     Text(
-                        "Type a message...",
+                        stringResource(R.string.message_hint),
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                     )
                 },
@@ -323,7 +328,7 @@ private fun MessageInput(
                 modifier = Modifier.height(56.dp),
                 shape = RoundedCornerShape(28.dp)
             ) {
-                Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send")
+                Icon(Icons.AutoMirrored.Filled.Send, contentDescription = stringResource(R.string.send))
             }
         }
     }
