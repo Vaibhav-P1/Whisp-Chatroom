@@ -27,3 +27,8 @@ project-notes/
 firestore-tests/node_modules/
 firestore-debug.log
 ui-debug.log
+
+# Release signing secrets
+keystore.properties
+*.jks
+*.keystore

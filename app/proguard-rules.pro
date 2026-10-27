@@ -19,3 +19,11 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+# Firestore fills these classes by reflection (toObject) through their fields and getters/setters,
+# so R8 must not rename or strip them. Messages are mapped by hand and need no rule.
+-keep class com.example.wishpchatroom.data.Room { *; }
+-keep class com.example.wishpchatroom.data.User { *; }
+
+# Keep line numbers in crash reports.
+-keepattributes SourceFile,LineNumberTable
+-renamesourcefileattribute SourceFile

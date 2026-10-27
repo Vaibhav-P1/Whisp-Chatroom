@@ -1,10 +1,22 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.google.services)
     alias(libs.plugins.hilt)
     alias(libs.plugins.ksp)
+    jacoco
 }
+
+// Release signing comes from keystore.properties (gitignored) or WISHP_* environment variables, so no
+// secret is committed. Without them the release build is still produced, just unsigned (as in CI).
+val keystoreProps = Properties().apply {
+    val file = rootProject.file("keystore.properties")
+    if (file.exists()) file.inputStream().use { load(it) }
+}
+fun signingValue(key: String, env: String): String? =
+    keystoreProps.getProperty(key) ?: System.getenv(env)
 
 android {
     namespace = "com.example.wishpchatroom"
@@ -23,9 +35,26 @@ android {
         }
     }
 
+    signingConfigs {
+        val storePath = signingValue("storeFile", "WISHP_KEYSTORE_FILE")
+        if (storePath != null) {
+            create("release") {
+                storeFile = rootProject.file(storePath)
+                storePassword = signingValue("storePassword", "WISHP_KEYSTORE_PASSWORD")
+                keyAlias = signingValue("keyAlias", "WISHP_KEY_ALIAS")
+                keyPassword = signingValue("keyPassword", "WISHP_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
+        debug {
+            enableUnitTestCoverage = true
+        }
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            signingConfig = signingConfigs.findByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -45,10 +74,23 @@ android {
     composeOptions {
         kotlinCompilerExtensionVersion = libs.versions.composeCompiler.get()
     }
+    testOptions {
+        unitTests {
+            isIncludeAndroidResources = true
+        }
+    }
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
+    }
+}
+
+// Robolectric loads classes through its own loader; without this Jacoco reports them as uncovered.
+tasks.withType<Test>().configureEach {
+    extensions.configure<JacocoTaskExtension> {
+        isIncludeNoLocationClasses = true
+        excludes = listOf("jdk.internal.*")
     }
 }
 
@@ -84,6 +126,11 @@ dependencies {
     testImplementation(libs.turbine)
     // The android.jar stub of org.json does nothing on the JVM; the real one lets reactions be encoded in tests.
     testImplementation(libs.json.test)
+    // Compose UI tests run on the JVM with Robolectric (no emulator needed, so they also run in CI).
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.core)
+    testImplementation(platform(libs.androidx.compose.bom))
+    testImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.test.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))
