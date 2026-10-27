@@ -47,8 +47,9 @@ jobs:
           }
           EOF
 
-      - name: Build, lint and test
-        run: ./gradlew assembleDebug lintDebug testDebugUnitTest --stacktrace
+      # assembleRelease runs R8; without signing secrets the APK is simply unsigned.
+      - name: Build, lint, test with coverage, and shrink the release
+        run: ./gradlew assembleDebug lintDebug createDebugUnitTestCoverageReport assembleRelease --stacktrace
 
       - name: Upload reports
         if: always()
@@ -58,6 +59,7 @@ jobs:
           path: |
             app/build/reports/lint-results-debug.html
             app/build/reports/tests/testDebugUnitTest
+            app/build/reports/coverage/test/debug
           if-no-files-found: ignore
 
   rules:
