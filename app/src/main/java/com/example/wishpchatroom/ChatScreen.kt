@@ -52,9 +52,9 @@ import com.example.wishpchatroom.viewmodel.RoomStatus
 @Composable
 fun ChatScreen(
     roomCode: String,
-    onNavigateBack: () -> Unit
+    onNavigateBack: () -> Unit,
+    chatViewModel: ChatViewModel = hiltViewModel()
 ) {
-    val chatViewModel: ChatViewModel = hiltViewModel()
     val context = LocalContext.current
 
     var messageText by remember { mutableStateOf("") }

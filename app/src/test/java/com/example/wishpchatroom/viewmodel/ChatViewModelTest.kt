@@ -1,12 +1,12 @@
 package com.example.wishpchatroom.viewmodel
 
 import com.example.wishpchatroom.MainDispatcherRule
-import com.example.wishpchatroom.data.ChatRepository
 import com.example.wishpchatroom.data.Message
 import com.example.wishpchatroom.data.Presence
 import com.example.wishpchatroom.data.ReplyRef
 import com.example.wishpchatroom.data.Resource
 import com.example.wishpchatroom.data.Room
+import com.example.wishpchatroom.testing.FakeChatRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
@@ -22,64 +22,6 @@ class ChatViewModelTest {
 
     @get:Rule
     val mainRule = MainDispatcherRule()
-
-    private class FakeChatRepository : ChatRepository {
-        override var currentUid: String? = "me"
-
-        val room = MutableStateFlow<Room?>(null)
-        val presence = MutableStateFlow<List<Presence>>(emptyList())
-        val messages = MutableStateFlow<List<Message>>(emptyList())
-
-        var sent = mutableListOf<Triple<String, String, ReplyRef?>>()
-        var edits = mutableListOf<Pair<String, String>>()
-        var sendResult: Resource<Unit> = Resource.Success(Unit)
-        var leaveResult: Resource<Unit> = Resource.Success(Unit)
-        var deleteRoomResult: Resource<Unit> = Resource.Success(Unit)
-        var cachedOlder = false
-        var serverOlderResult: Resource<Boolean> = Resource.Success(true)
-        var fetchOlderCalls = 0
-        var forgotten = false
-        var tempDeleteChecked = false
-        val presenceWrites = mutableListOf<Boolean>()
-
-        override fun observeMessages(roomCode: String, limit: Int): Flow<List<Message>> = messages
-        override fun searchMessages(roomCode: String, query: String): Flow<List<Message>> =
-            flowOf(messages.value.filter { it.messageText.contains(query, ignoreCase = true) })
-
-        override suspend fun syncMessages(roomCode: String) {}
-
-        override suspend fun sendMessage(roomCode: String, messageText: String, username: String, replyTo: ReplyRef?): Resource<Unit> {
-            sent += Triple(messageText, username, replyTo)
-            return sendResult
-        }
-
-        override suspend fun editMessage(roomCode: String, messageId: String, newText: String): Resource<Unit> {
-            edits += messageId to newText
-            return Resource.Success(Unit)
-        }
-
-        override suspend fun deleteMessage(roomCode: String, messageId: String) = Resource.Success(Unit)
-        override suspend fun toggleReaction(roomCode: String, messageId: String, emoji: String) = Resource.Success(Unit)
-        override suspend fun retryMessage(roomCode: String, messageId: String) = Resource.Success(Unit)
-        override suspend fun hasCachedOlder(roomCode: String, shownCount: Int) = cachedOlder
-
-        override suspend fun fetchOlderMessages(roomCode: String): Resource<Boolean> {
-            fetchOlderCalls++
-            return serverOlderResult
-        }
-
-        override suspend fun getRoom(roomCode: String): Room? = room.value
-        override fun observeRoom(roomCode: String): Flow<Room?> = room
-        override fun observePresence(roomCode: String): Flow<List<Presence>> = presence
-        override suspend fun leaveRoom(roomCode: String) = leaveResult
-        override suspend fun forgetRoom(roomCode: String) { forgotten = true }
-        override suspend fun closeRoom(roomCode: String) = Resource.Success(Unit)
-        override suspend fun deleteRoom(roomCode: String) = deleteRoomResult
-        override suspend fun updateUserPresence(roomCode: String, username: String, isPresent: Boolean) {
-            presenceWrites += isPresent
-        }
-        override suspend fun deleteIfTemporaryOwner(roomCode: String) { tempDeleteChecked = true }
-    }
 
     private val code = "ABC123"
 

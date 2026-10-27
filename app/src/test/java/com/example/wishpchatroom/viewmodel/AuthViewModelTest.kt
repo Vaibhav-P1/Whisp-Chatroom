@@ -4,7 +4,7 @@ import app.cash.turbine.test
 import com.example.wishpchatroom.MainDispatcherRule
 import com.example.wishpchatroom.data.Resource
 import com.example.wishpchatroom.data.User
-import com.example.wishpchatroom.data.UserRepository
+import com.example.wishpchatroom.testing.FakeUserRepository
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -18,34 +18,6 @@ class AuthViewModelTest {
 
     @get:Rule
     val mainRule = MainDispatcherRule()
-
-    private class FakeUserRepository : UserRepository {
-        var loggedIn = false
-        var user: User? = null
-        var loginResult: Resource<Boolean> = Resource.Success(true)
-        var signUpResult: Resource<Boolean> = Resource.Success(true)
-        var gate: CompletableDeferred<Unit>? = null
-        var loginCalls = 0
-        var cleared = false
-
-        override suspend fun signUp(email: String, password: String, firstName: String, lastName: String): Resource<Boolean> {
-            gate?.await()
-            if (signUpResult is Resource.Success) user = User(firstName, lastName, email)
-            return signUpResult
-        }
-
-        override suspend fun login(email: String, password: String): Resource<Boolean> {
-            loginCalls++
-            gate?.await()
-            if (loginResult is Resource.Success) loggedIn = true
-            return loginResult
-        }
-
-        override fun isLoggedIn() = loggedIn
-        override suspend fun getCurrentUser() = user
-        override fun logout() { loggedIn = false; user = null }
-        override suspend fun clearLocalData() { cleared = true }
-    }
 
     @Test
     fun `loads the current user on creation`() {
