@@ -1,5 +1,7 @@
 # 🗨️ WhispChatRoom - Real-Time Chat via Joinable Rooms
 
+[![CI](https://github.com/Vaibhav-P1/Whisp-Chatroom/actions/workflows/ci.yml/badge.svg)](https://github.com/Vaibhav-P1/Whisp-Chatroom/actions/workflows/ci.yml)
+
 ## Project Overview
 WhispChatRoom is an Android chat app where signed-in users create or join chat rooms with a unique 6-character room code. Messages sync in real time through **Cloud Firestore**. Room owners can close or delete a room, and a room can be marked temporary so it is removed when the creator leaves.
 
