@@ -14,10 +14,11 @@ class FirestoreRoomRepository @Inject constructor(
     private val firestore: FirebaseFirestore,
     private val auth: FirebaseAuth
 ) : RoomRepository {
-    override suspend fun createRoom(username: String, isTemporary: Boolean): Resource<String> {
+    override suspend fun createRoom(username: String, isTemporary: Boolean, mission: MissionSpec?): Resource<String> {
         val uid = auth.currentUser?.uid ?: return Resource.Error("You must be logged in")
         val name = username.trim()
         validateUsername(name)?.let { return Resource.Error(it) }
+        mission?.let { spec -> validateMission(spec)?.let { return Resource.Error(it) } }
 
         return try {
             repeat(MAX_CODE_ATTEMPTS) {
@@ -29,17 +30,23 @@ class FirestoreRoomRepository @Inject constructor(
                     if (transaction.get(roomRef).exists()) {
                         false
                     } else {
-                        transaction.set(
-                            roomRef,
-                            mapOf(
-                                "roomCode" to roomCode,
-                                "creatorUid" to uid,
-                                "roomOpen" to true,
-                                "members" to mapOf(uid to name),
-                                "temporary" to isTemporary,
-                                "timestamp" to FieldValue.serverTimestamp()
-                            )
+                        val data = mutableMapOf<String, Any>(
+                            "roomCode" to roomCode,
+                            "creatorUid" to uid,
+                            "roomOpen" to true,
+                            "members" to mapOf(uid to name),
+                            "temporary" to isTemporary,
+                            "timestamp" to FieldValue.serverTimestamp()
                         )
+                        // The rules derive the expiry from "timestamp" plus this duration.
+                        if (mission != null) {
+                            data["mission"] = mapOf(
+                                "title" to mission.title.trim(),
+                                "goal" to mission.goal.trim(),
+                                "durationSeconds" to mission.durationSeconds
+                            )
+                        }
+                        transaction.set(roomRef, data)
                         true
                     }
                 }.await()

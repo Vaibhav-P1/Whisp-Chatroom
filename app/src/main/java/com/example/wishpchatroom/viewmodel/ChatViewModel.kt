@@ -6,11 +6,15 @@ import com.example.wishpchatroom.data.Ban
 import com.example.wishpchatroom.data.ContactsRepository
 import com.example.wishpchatroom.data.ChatRepository
 import com.example.wishpchatroom.data.Message
+import com.example.wishpchatroom.data.Mission
+import com.example.wishpchatroom.data.MissionPhase
 import com.example.wishpchatroom.data.ModerationRepository
 import com.example.wishpchatroom.data.Presence
 import com.example.wishpchatroom.data.ReplyRef
 import com.example.wishpchatroom.data.ReportCategory
+import com.example.wishpchatroom.data.expiresAtMillis
 import com.example.wishpchatroom.data.isDmRoom
+import com.example.wishpchatroom.data.missionPhase
 import com.example.wishpchatroom.data.Resource
 import com.example.wishpchatroom.data.Room
 import com.example.wishpchatroom.data.toUserMessage
@@ -73,7 +77,10 @@ data class ChatUiState(
     val isDm: Boolean = false,
     val dmPeerName: String? = null,
     // A locked DM keeps its history but takes no new messages (the friend was removed or blocked).
-    val isLocked: Boolean = false
+    val isLocked: Boolean = false,
+    // Set for mission rooms. The expiry is the server creation time plus the mission duration.
+    val mission: Mission? = null,
+    val missionExpiresAt: Long? = null
 )
 
 @OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class)
@@ -136,6 +143,11 @@ class ChatViewModel @Inject constructor(
         }
 
         val uid = chatRepository.currentUid
+        // Long after the mission ended the rules deny the room: treat it like a deleted room.
+        if (room.missionPhase(now) == MissionPhase.GONE && !isLeaving) {
+            _uiState.update { it.copy(roomStatus = RoomStatus.DELETED) }
+            return
+        }
         // The owner removed this user: the members map no longer has them.
         if (uid != null && uid !in room.members && !isLeaving) {
             _uiState.update { it.copy(roomStatus = RoomStatus.REMOVED) }
@@ -168,7 +180,9 @@ class ChatViewModel @Inject constructor(
                 members = members,
                 isDm = room.type == "dm",
                 dmPeerName = room.members.entries.firstOrNull { e -> e.key != uid }?.value,
-                isLocked = room.locked
+                isLocked = room.locked,
+                mission = room.mission,
+                missionExpiresAt = room.expiresAtMillis()
             )
         }
     }

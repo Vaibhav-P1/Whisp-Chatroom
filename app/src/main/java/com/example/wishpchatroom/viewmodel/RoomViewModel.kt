@@ -2,6 +2,7 @@ package com.example.wishpchatroom.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.wishpchatroom.data.MissionSpec
 import com.example.wishpchatroom.data.Resource
 import com.example.wishpchatroom.data.RoomRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -33,8 +34,9 @@ class RoomViewModel @Inject constructor(
     private val _roomEntered = Channel<String>(Channel.BUFFERED)
     val roomEntered: Flow<String> = _roomEntered.receiveAsFlow()
 
-    fun createRoom(username: String, isTemporary: Boolean) {
-        submit { roomRepository.createRoom(username, isTemporary) }
+    fun createRoom(username: String, isTemporary: Boolean, mission: MissionSpec? = null) {
+        // A mission ends on its own, so it is never also a creator-leaves temporary room.
+        submit { roomRepository.createRoom(username, isTemporary && mission == null, mission) }
     }
 
     fun joinRoom(roomCode: String, username: String) {

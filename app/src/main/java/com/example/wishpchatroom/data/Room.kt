@@ -15,7 +15,8 @@ data class Room(
     val locked: Boolean = false,
     val lockedBy: String = "",
     val lastMessage: LastMessage? = null,
-    val lastMessageAt: Date? = null
+    val lastMessageAt: Date? = null,
+    val mission: Mission? = null
 )
 
 /** Preview of the newest message, kept on the room document so the inbox needs no message query. */

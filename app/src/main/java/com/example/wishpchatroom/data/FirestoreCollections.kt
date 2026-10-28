@@ -7,6 +7,8 @@ object FirestoreCollections {
     const val MESSAGES = "messages"
     const val PRESENCE = "presence"
     const val BLOCKS = "blocks"
+    const val TASKS = "tasks"
+    const val SAVED = "saved"
     const val FRIENDS = "friends"
     const val CHATS = "chats"
     const val HANDLES = "handles"

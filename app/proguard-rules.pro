@@ -24,6 +24,7 @@
 -keep class com.example.wishpchatroom.data.Room { *; }
 -keep class com.example.wishpchatroom.data.User { *; }
 -keep class com.example.wishpchatroom.data.LastMessage { *; }
+-keep class com.example.wishpchatroom.data.Mission { *; }
 
 # Keep line numbers in crash reports.
 -keepattributes SourceFile,LineNumberTable

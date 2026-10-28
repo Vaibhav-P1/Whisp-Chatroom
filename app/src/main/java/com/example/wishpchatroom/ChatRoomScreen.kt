@@ -17,6 +17,8 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -42,6 +44,10 @@ import com.example.wishpchatroom.data.User
 import com.example.wishpchatroom.data.UserPrefs
 import com.example.wishpchatroom.ui.components.ErrorCard
 import com.example.wishpchatroom.viewmodel.AuthViewModel
+import com.example.wishpchatroom.data.MAX_MISSION_GOAL
+import com.example.wishpchatroom.data.MAX_MISSION_TITLE
+import com.example.wishpchatroom.data.MissionDuration
+import com.example.wishpchatroom.data.MissionSpec
 import com.example.wishpchatroom.viewmodel.RoomViewModel
 
 @Composable
@@ -50,16 +56,23 @@ fun ChatRoomScreen(
     onJoinRoom: (String) -> Unit,
     onNavigateToLogin: () -> Unit,
     onOpenInbox: () -> Unit = {},
-    onOpenFriends: () -> Unit = {}
+    onOpenFriends: () -> Unit = {},
+    onOpenNotes: () -> Unit = {},
+    // A room code from an invite link: opens the form in join mode with the code filled in.
+    initialJoinCode: String? = null
 ) {
     val roomViewModel: RoomViewModel = hiltViewModel()
     val context = LocalContext.current
     val sharedPref = context.getSharedPreferences(UserPrefs.FILE_NAME, Context.MODE_PRIVATE)
 
-    var roomCode by remember { mutableStateOf("") }
+    var roomCode by remember { mutableStateOf(initialJoinCode.orEmpty().uppercase()) }
     var username by remember { mutableStateOf(sharedPref.getString(UserPrefs.KEY_DEFAULT_USERNAME, "") ?: "") }
-    var isCreateMode by remember { mutableStateOf(true) }
+    var isCreateMode by remember { mutableStateOf(initialJoinCode == null) }
     var isTemporary by remember { mutableStateOf(false) }
+    var isMission by remember { mutableStateOf(false) }
+    var missionTitle by remember { mutableStateOf("") }
+    var missionGoal by remember { mutableStateOf("") }
+    var missionDuration by remember { mutableStateOf(MissionDuration.SIX_HOURS) }
     var useSavedUsername by remember { mutableStateOf(false) }
     var showDeleteAccount by remember { mutableStateOf(false) }
 
@@ -121,11 +134,20 @@ fun ChatRoomScreen(
             onRoomCodeChange = { roomCode = it.uppercase() },
             isTemporary = isTemporary,
             onTemporaryChange = { isTemporary = it },
+            isMission = isMission,
+            onMissionChange = { isMission = it },
+            missionTitle = missionTitle,
+            onMissionTitleChange = { missionTitle = it },
+            missionGoal = missionGoal,
+            onMissionGoalChange = { missionGoal = it },
+            missionDuration = missionDuration,
+            onMissionDurationChange = { missionDuration = it },
             errorMessage = roomState.errorMessage,
             isLoading = roomState.isLoading,
             onSubmit = {
                 if (isCreateMode) {
-                    roomViewModel.createRoom(username, isTemporary)
+                    val spec = if (isMission) MissionSpec(missionTitle, missionGoal, missionDuration.seconds) else null
+                    roomViewModel.createRoom(username, isTemporary, spec)
                 } else {
                     roomViewModel.joinRoom(roomCode, username)
                 }
@@ -141,6 +163,9 @@ fun ChatRoomScreen(
             OutlinedButton(onClick = onOpenFriends, modifier = Modifier.weight(1f)) {
                 Text(stringResource(R.string.open_friends))
             }
+        }
+        OutlinedButton(onClick = onOpenNotes, modifier = Modifier.fillMaxWidth()) {
+            Text(stringResource(R.string.open_notes))
         }
 
         Spacer(modifier = Modifier.height(24.dp))
@@ -230,6 +255,7 @@ private fun ModeButton(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun RoomForm(
     username: String,
@@ -241,6 +267,14 @@ private fun RoomForm(
     onRoomCodeChange: (String) -> Unit,
     isTemporary: Boolean,
     onTemporaryChange: (Boolean) -> Unit,
+    isMission: Boolean,
+    onMissionChange: (Boolean) -> Unit,
+    missionTitle: String,
+    onMissionTitleChange: (String) -> Unit,
+    missionGoal: String,
+    onMissionGoalChange: (String) -> Unit,
+    missionDuration: MissionDuration,
+    onMissionDurationChange: (MissionDuration) -> Unit,
     errorMessage: String?,
     isLoading: Boolean,
     onSubmit: () -> Unit
@@ -273,11 +307,52 @@ private fun RoomForm(
             Spacer(modifier = Modifier.height(16.dp))
 
             if (isCreateMode) {
+                if (!isMission) {
+                    LabeledCheckbox(
+                        checked = isTemporary,
+                        onCheckedChange = onTemporaryChange,
+                        label = stringResource(R.string.temporary_room)
+                    )
+                }
                 LabeledCheckbox(
-                    checked = isTemporary,
-                    onCheckedChange = onTemporaryChange,
-                    label = stringResource(R.string.temporary_room)
+                    checked = isMission,
+                    onCheckedChange = onMissionChange,
+                    label = stringResource(R.string.mission_room)
                 )
+                if (isMission) {
+                    OutlinedTextField(
+                        value = missionTitle,
+                        onValueChange = { if (it.length <= MAX_MISSION_TITLE) onMissionTitleChange(it) },
+                        label = { Text(stringResource(R.string.mission_title)) },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = missionGoal,
+                        onValueChange = { if (it.length <= MAX_MISSION_GOAL) onMissionGoalChange(it) },
+                        label = { Text(stringResource(R.string.mission_goal)) },
+                        modifier = Modifier.fillMaxWidth(),
+                        maxLines = 3
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(stringResource(R.string.mission_duration), style = MaterialTheme.typography.bodySmall)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        MissionDuration.values().forEach { option ->
+                            FilterChip(
+                                selected = option == missionDuration,
+                                onClick = { onMissionDurationChange(option) },
+                                label = { Text(option.label) }
+                            )
+                        }
+                    }
+                    Text(
+                        stringResource(R.string.mission_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                }
             } else {
                 OutlinedTextField(
                     value = roomCode,

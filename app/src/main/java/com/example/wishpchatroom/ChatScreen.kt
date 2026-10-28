@@ -47,7 +47,11 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.wishpchatroom.data.Message
+import com.example.wishpchatroom.data.MissionPhase
+import com.example.wishpchatroom.data.phaseAt
 import com.example.wishpchatroom.viewmodel.ChatViewModel
+import com.example.wishpchatroom.viewmodel.MissionViewModel
+import kotlinx.coroutines.delay
 import com.example.wishpchatroom.viewmodel.Member
 import com.example.wishpchatroom.viewmodel.RoomStatus
 
@@ -55,7 +59,8 @@ import com.example.wishpchatroom.viewmodel.RoomStatus
 fun ChatScreen(
     roomCode: String,
     onNavigateBack: () -> Unit,
-    chatViewModel: ChatViewModel = hiltViewModel()
+    chatViewModel: ChatViewModel = hiltViewModel(),
+    missionViewModel: MissionViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
 
@@ -71,7 +76,21 @@ fun ChatScreen(
     var memberToRemove by remember { mutableStateOf<Member?>(null) }
 
     val uiState by chatViewModel.uiState.collectAsStateWithLifecycle()
-    val isRoomOpen = uiState.roomStatus == RoomStatus.OPEN
+    val missionState by missionViewModel.uiState.collectAsStateWithLifecycle()
+
+    // A mission room counts down: tick once a second while it has an expiry, so the banner is live
+    // and the input locks the moment the time is up. The server enforces the same moment in the rules.
+    var now by remember { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(uiState.missionExpiresAt) {
+        while (uiState.missionExpiresAt != null) {
+            now = System.currentTimeMillis()
+            delay(1_000)
+        }
+    }
+    val missionPhase = phaseAt(uiState.missionExpiresAt, now)
+    var showMission by remember { mutableStateOf(false) }
+
+    val isRoomOpen = uiState.roomStatus == RoomStatus.OPEN && missionPhase == MissionPhase.ACTIVE
     val currentUid = chatViewModel.currentUid
 
     LaunchedEffect(roomCode) {
@@ -101,6 +120,21 @@ fun ChatScreen(
     // The owner's ban list is only followed while the members dialog is open.
     LaunchedEffect(showMembers, uiState.isOwner) {
         if (showMembers) chatViewModel.startWatchingBans(roomCode) else chatViewModel.stopWatchingBans()
+    }
+
+    uiState.mission?.let { mission ->
+        if (showMission) {
+            MissionDialog(
+                roomCode = roomCode,
+                roomTitleForNotes = mission.title,
+                myName = uiState.roomUsername.orEmpty(),
+                mission = mission,
+                phase = missionPhase,
+                isOwner = uiState.isOwner,
+                onDismiss = { showMission = false },
+                viewModel = missionViewModel
+            )
+        }
     }
 
     if (showMembers) {
@@ -201,6 +235,12 @@ fun ChatScreen(
                 messageToDelete = message
             },
             onDismiss = { actionsMessage = null },
+            onSaveNote = {
+                actionsMessage = null
+                missionViewModel.saveNote(
+                    uiState.mission?.title ?: "Room $roomCode", message.username, message.messageText, "message"
+                )
+            },
             onReport = {
                 actionsMessage = null
                 messageToReport = message
@@ -254,6 +294,16 @@ fun ChatScreen(
                 onClose = { chatViewModel.closeRoom(roomCode, onNavigateBack) },
                 onDelete = { showDeleteDialog = true }
             )
+
+            uiState.mission?.let { mission ->
+                MissionBanner(
+                    mission = mission,
+                    expiresAt = uiState.missionExpiresAt,
+                    now = now,
+                    phase = missionPhase,
+                    onClick = { showMission = true }
+                )
+            }
 
             if (uiState.isLocked) {
                 Text(
