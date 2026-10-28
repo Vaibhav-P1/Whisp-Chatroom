@@ -158,7 +158,8 @@ class OfflineFirstChatRepositoryTest {
     }
 
     private val clock = FakeClock()
-    private val repo = OfflineFirstChatRepository(remote, dao, clock)
+    private val reminders = com.example.wishpchatroom.testing.FakeReminderScheduler()
+    private val repo = OfflineFirstChatRepository(remote, dao, clock, reminders)
 
     private fun entity(
         id: String,
@@ -223,6 +224,26 @@ class OfflineFirstChatRepositoryTest {
     @Test
     fun `retry of an unknown message is an error`() = runTest {
         assertTrue(repo.retryMessage(code, "nope") is Resource.Error)
+    }
+
+    // --- reminders are cancelled when the room is gone for this user ---
+
+    @Test
+    fun `leaving deleting closing or forgetting a room cancels its reminder`() = runTest {
+        for (action in listOf<suspend (String) -> Unit>(
+            { repo.leaveRoom(it) }, { repo.deleteRoom(it) }, { repo.closeRoom(it) }, { repo.forgetRoom(it) }
+        )) {
+            reminders.cancelled.clear()
+            action(code)
+            assertEquals(listOf(code), reminders.cancelled)
+        }
+    }
+
+    @Test
+    fun `a failed leave keeps the reminder`() = runTest {
+        remote.leaveResult = Resource.Error("offline")
+        repo.leaveRoom(code)
+        assertTrue(reminders.cancelled.isEmpty())
     }
 
     // --- sync ---

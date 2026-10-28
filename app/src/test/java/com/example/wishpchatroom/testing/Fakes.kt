@@ -106,6 +106,17 @@ class FakeModerationRepository : ModerationRepository {
     override fun observeBans(roomCode: String): Flow<List<Ban>> = bans
 }
 
+class FakeReminderScheduler : com.example.wishpchatroom.data.ReminderScheduler {
+    val scheduled = mutableMapOf<String, Pair<String, Long>>()
+    val cancelled = mutableListOf<String>()
+    var cancelledAll = false
+
+    override fun isScheduled(roomCode: String) = roomCode in scheduled
+    override fun schedule(roomCode: String, title: String, delayMillis: Long) { scheduled[roomCode] = title to delayMillis }
+    override fun cancel(roomCode: String) { scheduled.remove(roomCode); cancelled += roomCode }
+    override fun cancelAll() { scheduled.clear(); cancelledAll = true }
+}
+
 class FakeMissionRepository : com.example.wishpchatroom.data.MissionRepository {
     val tasks = MutableStateFlow<List<com.example.wishpchatroom.data.MissionTask>>(emptyList())
     val notes = MutableStateFlow<List<com.example.wishpchatroom.data.SavedNote>>(emptyList())
@@ -232,7 +243,9 @@ class FakeContactsRepository : com.example.wishpchatroom.data.ContactsRepository
         return Resource.Success(Unit)
     }
 
+    var readAt: Long? = null
     override suspend fun markRead(roomCode: String) { reads += roomCode }
+    override suspend fun lastReadAt(roomCode: String): Long? = readAt
 }
 
 class FakeChatRepository : ChatRepository {

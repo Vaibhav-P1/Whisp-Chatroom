@@ -73,6 +73,24 @@ class InboxScreenTest {
     }
 
     @Test
+    fun `an unread chat shows its count, capped at 99 plus`() {
+        repo.inbox.value = listOf(
+            row("Bob").copy(unread = true, unreadCount = 3),
+            row("Cy").copy(unread = true, unreadCount = 100)
+        )
+        showScreen()
+        composeRule.onNodeWithText("3").assertExists()
+        composeRule.onNodeWithText("99+").assertExists()
+    }
+
+    @Test
+    fun `a muted unread chat shows no number`() {
+        repo.inbox.value = listOf(row("Bob").copy(unread = true, muted = true, unreadCount = 7))
+        showScreen()
+        composeRule.onNodeWithText("7").assertDoesNotExist()
+    }
+
+    @Test
     fun `a locked conversation says so instead of showing the preview`() {
         repo.inbox.value = listOf(row("Bob", locked = true))
         showScreen()

@@ -396,14 +396,14 @@ class ChatViewModelTest {
     }
 
     @Test
-    fun `a code room is not a dm and does not touch the read marker`() {
+    fun `a code room is not a dm but also keeps a read marker`() {
         val repo = FakeChatRepository().apply { room.value = room() }
         val contacts = FakeContactsRepository()
         val vm = ChatViewModel(repo, moderation, contacts)
         vm.loadRoom(code)
         assertFalse(vm.uiState.value.isDm)
         assertFalse(vm.uiState.value.isLocked)
-        assertTrue(contacts.reads.isEmpty())
+        assertEquals(listOf(code), contacts.reads)
     }
 
     @Test
@@ -417,5 +417,64 @@ class ChatViewModelTest {
         contacts.reads.clear()
         vm.leaveRoom("dm_me_u2") {}
         assertEquals(listOf("dm_me_u2"), contacts.reads)
+    }
+
+    // --- unread state ---
+
+    @Test
+    fun `the time of the last read is remembered before the chat is marked read`() {
+        val repo = FakeChatRepository().apply { room.value = room() }
+        val contacts = FakeContactsRepository().apply { readAt = 500L }
+        val vm = ChatViewModel(repo, moderation, contacts)
+        vm.loadRoom(code)
+        assertEquals(500L, vm.uiState.value.unreadSince)
+        assertEquals(listOf(code), contacts.reads)
+    }
+
+    @Test
+    fun `a chat that was never read has no unread divider`() {
+        val repo = FakeChatRepository().apply { room.value = room() }
+        val vm = ChatViewModel(repo, moderation, FakeContactsRepository())
+        vm.loadRoom(code)
+        assertNull(vm.uiState.value.unreadSince)
+    }
+
+    @Test
+    fun `an open chat advances the read marker for incoming messages at most every 10 seconds`() {
+        val repo = FakeChatRepository().apply {
+            room.value = room()
+            now = 1_000_000L
+        }
+        val contacts = FakeContactsRepository()
+        val vm = ChatViewModel(repo, moderation, contacts)
+        vm.loadRoom(code)
+        vm.loadMessages(code)
+        contacts.reads.clear()
+
+        repo.messages.value = listOf(message("m1"))
+        assertTrue("within 10 s of the last write", contacts.reads.isEmpty())
+
+        repo.now += 11_000
+        repo.messages.value = listOf(message("m1"), message("m2"))
+        assertEquals(1, contacts.reads.size)
+
+        repo.messages.value = listOf(message("m1"), message("m2"), message("m3"))
+        assertEquals("throttled again", 1, contacts.reads.size)
+    }
+
+    @Test
+    fun `my own messages never move the read marker`() {
+        val repo = FakeChatRepository().apply {
+            room.value = room()
+            now = 1_000_000L
+        }
+        val contacts = FakeContactsRepository()
+        val vm = ChatViewModel(repo, moderation, contacts)
+        vm.loadRoom(code)
+        vm.loadMessages(code)
+        contacts.reads.clear()
+        repo.now += 60_000
+        repo.messages.value = listOf(Message("mine", "me", "ada", "hi", 1L))
+        assertTrue(contacts.reads.isEmpty())
     }
 }

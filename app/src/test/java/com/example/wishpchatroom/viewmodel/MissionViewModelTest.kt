@@ -17,12 +17,15 @@ import com.example.wishpchatroom.data.validateMission
 import com.example.wishpchatroom.testing.FakeChatRepository
 import com.example.wishpchatroom.testing.FakeContactsRepository
 import com.example.wishpchatroom.testing.FakeMissionRepository
+import com.example.wishpchatroom.testing.FakeReminderScheduler
 import com.example.wishpchatroom.testing.FakeModerationRepository
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Rule
@@ -134,7 +137,7 @@ class MissionViewModelTest {
     @Test
     fun `the checklist follows the repository and new tasks get the next order`() = runTest {
         val repo = FakeMissionRepository()
-        val vm = MissionViewModel(repo)
+        val vm = MissionViewModel(repo, FakeReminderScheduler())
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect { } }
         vm.startWatching("MSN123")
         repo.tasks.value = listOf(MissionTask("t1", "Write", false, "", 4))
@@ -146,7 +149,7 @@ class MissionViewModelTest {
     @Test
     fun `ticking and deleting a task go to the repository`() = runTest {
         val repo = FakeMissionRepository()
-        val vm = MissionViewModel(repo)
+        val vm = MissionViewModel(repo, FakeReminderScheduler())
         val task = MissionTask("t1", "Write", false, "", 1)
         vm.setTaskDone("MSN123", task, true)
         vm.deleteTask("MSN123", task)
@@ -157,7 +160,7 @@ class MissionViewModelTest {
     @Test
     fun `announcement and outcome confirm on success and show the error on failure`() = runTest {
         val repo = FakeMissionRepository()
-        val vm = MissionViewModel(repo)
+        val vm = MissionViewModel(repo, FakeReminderScheduler())
         vm.setAnnouncement("MSN123", "Stand-up at 10")
         assertEquals("Announcement posted.", vm.uiState.value.infoMessage)
         repo.result = Resource.Error("Could not save the outcome.")
@@ -171,7 +174,7 @@ class MissionViewModelTest {
     @Test
     fun `saving a note passes the room title author text and source`() = runTest {
         val repo = FakeMissionRepository()
-        val vm = MissionViewModel(repo)
+        val vm = MissionViewModel(repo, FakeReminderScheduler())
         vm.saveNote("Ship it", "bob", "remember this", "message")
         assertEquals(listOf(listOf("Ship it", "bob", "remember this", "message")), repo.saved)
         assertEquals("Saved to your notes.", vm.uiState.value.infoMessage)
@@ -187,5 +190,48 @@ class MissionViewModelTest {
         assertEquals(1, vm.uiState.value.notes.size)
         vm.delete(note)
         assertEquals(listOf("n1"), repo.deletedNotes)
+    }
+
+    // --- reminders ---
+
+    @Test
+    fun `the reminder fires 10 minutes before the end and never in the past`() {
+        val end = 10_000_000L
+        assertEquals(end - 10 * minute - 1_000_000L, com.example.wishpchatroom.data.reminderDelayMs(end, 1_000_000L))
+        assertNull(com.example.wishpchatroom.data.reminderDelayMs(end, end - 10 * minute))
+        assertNull(com.example.wishpchatroom.data.reminderDelayMs(end, end - 5 * minute))
+        assertNull(com.example.wishpchatroom.data.reminderDelayMs(end, end + 1))
+    }
+
+    @Test
+    fun `turning a reminder on schedules it with the room title and the delay`() {
+        val reminders = FakeReminderScheduler()
+        val vm = MissionViewModel(FakeMissionRepository(), reminders)
+        val now = 1_000_000L
+        vm.setReminder("MSN123", "Ship it", now + 30 * minute, now, on = true)
+        assertEquals("Ship it" to 20 * minute, reminders.scheduled["MSN123"])
+        assertTrue(vm.uiState.value.reminderOn)
+        assertNull(vm.uiState.value.errorMessage)
+    }
+
+    @Test
+    fun `a reminder is refused when less than 10 minutes are left`() {
+        val reminders = FakeReminderScheduler()
+        val vm = MissionViewModel(FakeMissionRepository(), reminders)
+        vm.setReminder("MSN123", "Ship it", 1_000_000L + 5 * minute, 1_000_000L, on = true)
+        assertTrue(reminders.scheduled.isEmpty())
+        assertFalse(vm.uiState.value.reminderOn)
+        assertNotNull(vm.uiState.value.errorMessage)
+    }
+
+    @Test
+    fun `turning a reminder off cancels it and the switch reflects a stored reminder`() {
+        val reminders = FakeReminderScheduler().apply { schedule("MSN123", "Ship it", 1L) }
+        val vm = MissionViewModel(FakeMissionRepository(), reminders)
+        vm.startWatching("MSN123")
+        assertTrue(vm.uiState.value.reminderOn)
+        vm.setReminder("MSN123", "Ship it", null, 0L, on = false)
+        assertEquals(listOf("MSN123"), reminders.cancelled)
+        assertFalse(vm.uiState.value.reminderOn)
     }
 }

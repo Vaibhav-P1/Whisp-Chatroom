@@ -18,6 +18,7 @@ import com.example.wishpchatroom.data.Room
 import com.example.wishpchatroom.testing.FakeChatRepository
 import com.example.wishpchatroom.testing.FakeContactsRepository
 import com.example.wishpchatroom.testing.FakeMissionRepository
+import com.example.wishpchatroom.testing.FakeReminderScheduler
 import com.example.wishpchatroom.testing.FakeModerationRepository
 import com.example.wishpchatroom.ui.theme.WishpChatRoomTheme
 import com.example.wishpchatroom.viewmodel.ChatViewModel
@@ -47,6 +48,7 @@ class ChatScreenTest {
         room.value = Room(code, creatorUid = "me", members = mapOf("me" to "ada", "u2" to "bob"))
     }
     private var leftChat = 0
+    private val contacts = FakeContactsRepository()
 
     private fun string(id: Int) = composeRule.activity.getString(id)
 
@@ -56,8 +58,8 @@ class ChatScreenTest {
                 ChatScreen(
                     roomCode = code,
                     onNavigateBack = { leftChat++ },
-                    chatViewModel = ChatViewModel(repo, FakeModerationRepository(), FakeContactsRepository()),
-                    missionViewModel = MissionViewModel(FakeMissionRepository())
+                    chatViewModel = ChatViewModel(repo, FakeModerationRepository(), contacts),
+                    missionViewModel = MissionViewModel(FakeMissionRepository(), FakeReminderScheduler())
                 )
             }
         }
@@ -77,6 +79,26 @@ class ChatScreenTest {
         composeRule.onNodeWithText("hi there").assertExists()
         composeRule.onNodeWithText("hello bob").assertExists()
         composeRule.onNodeWithText("bob").assertExists()
+    }
+
+    @Test
+    fun `messages that arrived since the last read are marked with a divider`() {
+        contacts.readAt = 1_500L
+        repo.messages.value = listOf(
+            Message("m1", "u2", "bob", "old news", 1_000L),
+            Message("m2", "u2", "bob", "fresh news", 2_000L)
+        )
+        showChat()
+        composeRule.onNodeWithText(string(R.string.new_messages_divider)).assertExists()
+        composeRule.onNodeWithText("fresh news").assertExists()
+    }
+
+    @Test
+    fun `no divider when nothing is new`() {
+        contacts.readAt = 5_000L
+        repo.messages.value = listOf(Message("m1", "u2", "bob", "old news", 1_000L))
+        showChat()
+        composeRule.onNodeWithText(string(R.string.new_messages_divider)).assertDoesNotExist()
     }
 
     @Test
