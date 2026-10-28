@@ -1,6 +1,8 @@
 package com.example.wishpchatroom.data
 
+import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.AggregateSource
 import com.google.firebase.firestore.DocumentReference
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
@@ -15,6 +17,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.transformLatest
 import kotlinx.coroutines.tasks.await
 import java.util.Date
 import javax.inject.Inject
@@ -309,6 +312,37 @@ class FirestoreContactsRepository @Inject constructor(
                     }
                 }
             }
+            // First the rows (an unread chat shows a dot), then the same rows with counts once they arrive.
+            .transformLatest { items ->
+                emit(items)
+                val counted = items.filter { it.unread && !it.muted }
+                if (counted.isNotEmpty()) {
+                    val counts = counted.associate { it.roomCode to countUnread(it) }
+                    emit(items.map { it.copy(unreadCount = counts[it.roomCode] ?: 0) })
+                }
+            }
+    }
+
+    // Counting is cached per (chat, newest message, read marker) so scrolling the inbox costs nothing.
+    private val countCache = mutableMapOf<Triple<String, Long?, Long>, Int>()
+
+    private suspend fun countUnread(item: InboxItem): Int {
+        val key = Triple(item.roomCode, item.lastAt, item.readAt)
+        countCache[key]?.let { return it }
+        return try {
+            val count = roomDoc(item.roomCode).collection(FirestoreCollections.MESSAGES)
+                .whereGreaterThan("timestamp", Timestamp(Date(item.readAt)))
+                .limit(UNREAD_CAP.toLong())
+                .count()
+                .get(AggregateSource.SERVER)
+                .await()
+                .count.toInt()
+            countCache[key] = count
+            count
+        } catch (e: Exception) {
+            // Offline or denied: the dot is still shown, only the number is missing.
+            0
+        }
     }
 
     private suspend fun ensureChatMarker(me: String, roomCode: String) {
@@ -335,6 +369,7 @@ class FirestoreContactsRepository @Inject constructor(
             lastSenderUid = last?.uid,
             lastAt = lastAt,
             unread = lastAt != null && lastAt > readAt && last?.uid != me,
+            readAt = readAt,
             pinned = prefs?.pinned ?: false,
             muted = prefs?.muted ?: false,
             // An archived conversation comes back when a newer message arrives.
@@ -363,6 +398,15 @@ class FirestoreContactsRepository @Inject constructor(
 
     override suspend fun markRead(roomCode: String) {
         writePrefs(roomCode, mapOf("lastReadAt" to FieldValue.serverTimestamp()))
+    }
+
+    override suspend fun lastReadAt(roomCode: String): Long? {
+        val me = currentUid ?: return null
+        return try {
+            prefsDoc(me, roomCode).get().await().getTimestamp("lastReadAt")?.toDate()?.time
+        } catch (e: Exception) {
+            null
+        }
     }
 
     private fun fullNameOf(first: String?, last: String?) =

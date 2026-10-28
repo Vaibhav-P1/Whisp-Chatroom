@@ -48,6 +48,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.wishpchatroom.data.InboxItem
+import com.example.wishpchatroom.data.unreadLabel
 import com.example.wishpchatroom.viewmodel.InboxViewModel
 import java.text.DateFormat
 import java.util.Date
@@ -158,6 +159,8 @@ private fun InboxRow(
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     val showUnread = item.unread && !item.muted
+    // A muted chat still shows that something is new, but quietly: a grey dot and no number.
+    val showQuietDot = item.unread && item.muted
 
     Box {
         Card(
@@ -202,13 +205,31 @@ private fun InboxRow(
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                         )
                     }
-                    if (showUnread) {
+                    if (showUnread && item.unreadCount > 0) {
+                        Box(
+                            modifier = Modifier
+                                .padding(top = 6.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.primary)
+                                .padding(horizontal = 7.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = unreadLabel(item.unreadCount),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onPrimary
+                            )
+                        }
+                    } else if (showUnread || showQuietDot) {
                         Box(
                             modifier = Modifier
                                 .padding(top = 6.dp)
                                 .size(10.dp)
                                 .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.primary)
+                                .background(
+                                    if (showQuietDot) MaterialTheme.colorScheme.outline
+                                    else MaterialTheme.colorScheme.primary
+                                )
                         )
                     }
                 }

@@ -29,7 +29,11 @@ data class InboxItem(
     val pinned: Boolean,
     val muted: Boolean,
     val archived: Boolean,
-    val locked: Boolean
+    val locked: Boolean,
+    // How many messages are new (capped at UNREAD_CAP), 0 while unknown. A muted chat never gets a number.
+    val unreadCount: Int = 0,
+    // Epoch millis the user last read this chat, the base of the unread count.
+    val readAt: Long = 0L
 )
 
 /** Per-conversation preferences, stored privately in users/{me}/chats/{roomCode}. */
@@ -50,6 +54,12 @@ private val RESERVED_HANDLES = setOf(
 )
 
 const val HANDLE_CHANGE_DAYS = 30
+
+/** The unread count stops here and is shown as "99+" (a count query reads one document per 1000 counted). */
+const val UNREAD_CAP = 100
+
+/** The text of an unread badge: the number, or "99+" at the cap. */
+fun unreadLabel(count: Int): String = if (count >= UNREAD_CAP) "${UNREAD_CAP - 1}+" else count.toString()
 
 /** Returns why [handle] cannot be used, or null if it is acceptable. Mirrors firestore.rules. */
 fun validateHandle(handle: String): String? = when {
@@ -114,6 +124,9 @@ interface ContactsRepository {
 
     suspend fun setArchived(roomCode: String, archived: Boolean): Resource<Unit>
 
-    /** Marks a conversation as read up to now. */
+    /** Marks a chat (a DM or a room) as read up to now. */
     suspend fun markRead(roomCode: String)
+
+    /** When the user last read this chat, null if never. Read before [markRead] to place the unread separator. */
+    suspend fun lastReadAt(roomCode: String): Long?
 }
