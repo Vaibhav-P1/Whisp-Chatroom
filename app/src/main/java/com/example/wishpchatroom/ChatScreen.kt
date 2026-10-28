@@ -138,7 +138,9 @@ fun ChatScreen(
                 phase = missionPhase,
                 isOwner = uiState.isOwner,
                 onDismiss = { showMission = false },
-                viewModel = missionViewModel
+                viewModel = missionViewModel,
+                expiresAt = uiState.missionExpiresAt,
+                now = now
             )
         }
     }
@@ -345,6 +347,7 @@ fun ChatScreen(
                 onToggleReaction = { messageId, emoji -> chatViewModel.toggleReaction(roomCode, messageId, emoji) },
                 modifier = Modifier.weight(1f),
                 blockedUids = uiState.blockedUids,
+                unreadSince = uiState.unreadSince,
                 now = now,
                 onReveal = { chatViewModel.revealWhisper(roomCode, it) }
             )

@@ -80,7 +80,9 @@ data class ChatUiState(
     val isLocked: Boolean = false,
     // Set for mission rooms. The expiry is the server creation time plus the mission duration.
     val mission: Mission? = null,
-    val missionExpiresAt: Long? = null
+    val missionExpiresAt: Long? = null,
+    // When this person last read the chat before opening it: messages after it are new (the divider).
+    val unreadSince: Long? = null
 )
 
 @OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class)
@@ -103,6 +105,7 @@ class ChatViewModel @Inject constructor(
     private var cleanupJob: Job? = null
     private var bansJob: Job? = null
     private var isLeaving = false
+    private var lastReadWrite = 0L
 
     private val searchQuery = MutableStateFlow("")
 
@@ -113,7 +116,14 @@ class ChatViewModel @Inject constructor(
 
     /** Starts following the room: its status (open, closed, deleted), its members and who is online. */
     fun loadRoom(roomCode: String) {
-        if (isDmRoom(roomCode)) viewModelScope.launch { contactsRepository.markRead(roomCode) }
+        // Remember where reading stopped last time (it places the "new messages" divider), then mark the
+        // chat read. An open chat keeps advancing the marker, so it never raises an unread count.
+        viewModelScope.launch {
+            val since = contactsRepository.lastReadAt(roomCode)
+            _uiState.update { it.copy(unreadSince = since) }
+            contactsRepository.markRead(roomCode)
+            lastReadWrite = chatRepository.serverNow()
+        }
         blocksJob?.cancel()
         blocksJob = viewModelScope.launch {
             moderationRepository.observeBlockedUids()
@@ -196,7 +206,10 @@ class ChatViewModel @Inject constructor(
             messageLimit
                 .flatMapLatest { limit -> chatRepository.observeMessages(roomCode, limit) }
                 .catch { e -> showError(e.toUserMessage("Could not load messages.")) }
-                .collect { messages -> _uiState.update { it.copy(messages = messages) } }
+                .collect { messages ->
+                    _uiState.update { it.copy(messages = messages) }
+                    advanceReadMarker(roomCode, messages)
+                }
         }
         // Hidden whispers are removed from the cache straight away and from the server as a best effort.
         cleanupJob?.cancel()
@@ -340,6 +353,17 @@ class ChatViewModel @Inject constructor(
             val result = chatRepository.deleteMessage(roomCode, messageId)
             if (result is Resource.Error) showError(result.message)
         }
+    }
+
+    // A message from someone else arrived while the chat is open: count it as read, at most once per
+    // READ_MARK_INTERVAL_MS (every write is a billed write).
+    private fun advanceReadMarker(roomCode: String, messages: List<Message>) {
+        val newest = messages.lastOrNull() ?: return
+        if (isLeaving || newest.uid == chatRepository.currentUid) return
+        val now = chatRepository.serverNow()
+        if (now - lastReadWrite < READ_MARK_INTERVAL_MS) return
+        lastReadWrite = now
+        viewModelScope.launch { contactsRepository.markRead(roomCode) }
     }
 
     /** The server's time as best known, for countdowns and for hiding expired whispers. */
@@ -517,7 +541,7 @@ class ChatViewModel @Inject constructor(
     private suspend fun leaveRoomInternal(roomCode: String, onDone: () -> Unit) {
         if (isLeaving) return
         isLeaving = true
-        if (isDmRoom(roomCode)) contactsRepository.markRead(roomCode)
+        contactsRepository.markRead(roomCode)
         stopListening()
         updatePresenceInternal(roomCode, false)
         chatRepository.deleteIfTemporaryOwner(roomCode)
@@ -606,6 +630,9 @@ class ChatViewModel @Inject constructor(
         const val HEARTBEAT_MS = 120_000L
         const val ONLINE_TIMEOUT_MS = 300_000L
         const val TICK_MS = 30_000L
+
+        // The read marker advances at most this often while a chat is open.
+        const val READ_MARK_INTERVAL_MS = 10_000L
 
         // How often hidden whispers are cleaned up while a chat is open.
         const val CLEANUP_INTERVAL_MS = 30_000L

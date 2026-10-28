@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -39,6 +40,13 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.filter
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.LaunchedEffect
@@ -77,60 +85,144 @@ fun MessageList(
     modifier: Modifier = Modifier,
     blockedUids: Set<String> = emptySet(),
     now: Long = 0L,
-    onReveal: (Message) -> Unit = {}
+    onReveal: (Message) -> Unit = {},
+    // Where the user stopped reading last time: the first message after it gets a "new messages" divider.
+    unreadSince: Long? = null
 ) {
     val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
 
-    // Items are: header, the messages, footer. Scroll to the end only when a new message arrives,
-    // not when older history is added above. Scrolling to the footer always reveals the end of the
-    // list, even when the newest message is taller than the screen.
-    val newestMessageId = messages.lastOrNull()?.id
-    LaunchedEffect(newestMessageId) {
-        if (newestMessageId != null) {
-            listState.animateScrollToItem(messages.size + 1)
+    // The first message from someone else that is newer than the last read time (computed once per open).
+    val firstUnreadId = remember(unreadSince, messages.firstOrNull()?.id) {
+        if (unreadSince == null) null
+        else messages.firstOrNull { it.timestamp > unreadSince && it.uid != currentUid }?.id
+    }
+    val dividerCount = if (firstUnreadId != null) 1 else 0
+    // Items are: header, the messages (plus the divider), footer.
+    val footerIndex = messages.size + 1 + dividerCount
+
+    // Is the user looking at the end of the chat? Evaluated when a scroll ends, never when a message
+    // arrives, so a new message cannot make it look as if the user had scrolled away.
+    var atBottom by remember { mutableStateOf(true) }
+    LaunchedEffect(listState) {
+        snapshotFlow { listState.isScrollInProgress }.filter { !it }.collect { atBottom = !listState.canScrollForward }
+    }
+
+    var pendingNew by remember { mutableIntStateOf(0) }
+    var started by remember { mutableStateOf(false) }
+    var newestTimestamp by remember { mutableStateOf(Long.MIN_VALUE) }
+
+    val newest = messages.lastOrNull()
+    LaunchedEffect(newest?.id) {
+        if (newest == null) return@LaunchedEffect
+        if (!started) {
+            started = true
+            newestTimestamp = newest.timestamp
+            // Opening a chat: start at the divider if there is news, otherwise at the end.
+            val dividerIndex = firstUnreadId?.let { id -> 1 + messages.indexOfFirst { it.id == id } }
+            if (dividerIndex != null && dividerIndex > 1) listState.scrollToItem(dividerIndex)
+            else listState.scrollToItem(footerIndex)
+            return@LaunchedEffect
+        }
+        // Older history loaded above, or a whisper that just hid, does not change what is newest.
+        if (newest.timestamp <= newestTimestamp) return@LaunchedEffect
+        newestTimestamp = newest.timestamp
+        if (newest.uid == currentUid || atBottom) {
+            // Scrolling to the footer always reveals the end, even when the newest message is taller than the screen.
+            listState.animateScrollToItem(footerIndex)
+            pendingNew = 0
+        } else {
+            pendingNew++
         }
     }
+    LaunchedEffect(atBottom) { if (atBottom) pendingNew = 0 }
 
     // Reaching the top of the list reveals older history.
     val isAtTop by remember { derivedStateOf { listState.firstVisibleItemIndex <= 1 } }
     LaunchedEffect(isAtTop, messages.size) {
-        if (isAtTop && messages.isNotEmpty()) onLoadOlder()
+        if (isAtTop && messages.isNotEmpty() && started) onLoadOlder()
     }
 
-    LazyColumn(
-        modifier = modifier.padding(horizontal = 8.dp),
-        state = listState,
-        verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        item(key = "header") {
-            if (isLoadingOlder) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(8.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+    Box(modifier = modifier) {
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 8.dp),
+            state = listState,
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            item(key = "header") {
+                if (isLoadingOlder) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(8.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                    }
+                } else {
+                    Spacer(modifier = Modifier.height(8.dp))
                 }
-            } else {
-                Spacer(modifier = Modifier.height(8.dp))
+            }
+
+            messages.forEach { message ->
+                if (message.id == firstUnreadId) {
+                    item(key = "unread-divider") { UnreadDivider() }
+                }
+                item(key = message.id) {
+                    MessageCard(
+                        message = message,
+                        currentUid = currentUid,
+                        isBlocked = message.uid in blockedUids,
+                        now = now,
+                        onReveal = { onReveal(message) },
+                        onRetry = { onRetry(message.id) },
+                        onLongClick = { onMessageActions(message) },
+                        onToggleReaction = { emoji -> onToggleReaction(message.id, emoji) }
+                    )
+                }
+            }
+
+            item(key = "footer") { Spacer(modifier = Modifier.height(8.dp)) }
+        }
+
+        if (pendingNew > 0 && !atBottom) {
+            ExtendedFloatingActionButton(
+                onClick = {
+                    pendingNew = 0
+                    scope.launch { listState.animateScrollToItem(footerIndex) }
+                },
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 12.dp),
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary
+            ) {
+                Text(pluralStringResource(R.plurals.new_messages, pendingNew, pendingNew))
             }
         }
+    }
+}
 
-        items(messages, key = { it.id }) { message ->
-            MessageCard(
-                message = message,
-                currentUid = currentUid,
-                isBlocked = message.uid in blockedUids,
-                now = now,
-                onReveal = { onReveal(message) },
-                onRetry = { onRetry(message.id) },
-                onLongClick = { onMessageActions(message) },
-                onToggleReaction = { emoji -> onToggleReaction(message.id, emoji) }
-            )
-        }
-
-        item(key = "footer") { Spacer(modifier = Modifier.height(8.dp)) }
+/** The line above the first message that arrived since the user last read the chat. */
+@Composable
+private fun UnreadDivider() {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        androidx.compose.material3.HorizontalDivider(modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.primary)
+        Text(
+            text = stringResource(R.string.new_messages_divider),
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(horizontal = 8.dp)
+        )
+        androidx.compose.material3.HorizontalDivider(modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.primary)
     }
 }
 
