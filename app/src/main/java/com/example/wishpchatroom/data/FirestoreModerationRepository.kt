@@ -42,9 +42,25 @@ class FirestoreModerationRepository @Inject constructor(
         if (uid == me) return Resource.Error("You can't block yourself.")
         return try {
             blocks(me).document(uid).set(mapOf("createdAt" to FieldValue.serverTimestamp())).await()
+            unfriendAndLockDm(me, uid)
             Resource.Success(Unit)
         } catch (e: Exception) {
             Resource.Error(e.toUserMessage("Could not block this user. Please try again."))
+        }
+    }
+
+    // Blocking someone you are friends with ends the friendship and locks the DM, which looks the
+    // same to them as an unfriend. Best effort: there is nothing to do when you were not friends.
+    private suspend fun unfriendAndLockDm(me: String, other: String) {
+        try {
+            val users = firestore.collection(FirestoreCollections.USERS)
+            firestore.batch()
+                .delete(users.document(me).collection(FirestoreCollections.FRIENDS).document(other))
+                .delete(users.document(other).collection(FirestoreCollections.FRIENDS).document(me))
+                .update(room(dmRoomId(me, other)), mapOf("locked" to true, "lockedBy" to me))
+                .commit().await()
+        } catch (e: Exception) {
+            // Not friends (no DM to lock): the block itself already succeeded.
         }
     }
 

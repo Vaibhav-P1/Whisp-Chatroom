@@ -244,6 +244,8 @@ fun ChatScreen(
         } else {
             ChatTopBar(
                 roomCode = roomCode,
+                isDm = uiState.isDm,
+                dmTitle = uiState.dmPeerName,
                 isRoomOwner = uiState.isOwner,
                 memberCount = uiState.members.size,
                 onBack = { chatViewModel.leaveRoom(roomCode, onNavigateBack) },
@@ -252,6 +254,18 @@ fun ChatScreen(
                 onClose = { chatViewModel.closeRoom(roomCode, onNavigateBack) },
                 onDelete = { showDeleteDialog = true }
             )
+
+            if (uiState.isLocked) {
+                Text(
+                    text = stringResource(R.string.dm_locked_banner),
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                    fontSize = 12.sp,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.errorContainer)
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                )
+            }
 
             if (uiState.roomStatus == RoomStatus.CLOSED) {
                 Text(
@@ -318,7 +332,7 @@ fun ChatScreen(
 
             MessageInput(
                 text = messageText,
-                enabled = isRoomOpen,
+                enabled = isRoomOpen && !uiState.isLocked,
                 onTextChange = {
                     messageText = it
                     chatViewModel.clearError()
@@ -337,6 +351,8 @@ fun ChatScreen(
 @Composable
 private fun ChatTopBar(
     roomCode: String,
+    isDm: Boolean,
+    dmTitle: String?,
     isRoomOwner: Boolean,
     memberCount: Int,
     onBack: () -> Unit,
@@ -356,11 +372,11 @@ private fun ChatTopBar(
         title = {
             Column {
                 Text(
-                    text = stringResource(R.string.room_title, roomCode),
+                    text = if (isDm) dmTitle.orEmpty() else stringResource(R.string.room_title, roomCode),
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onPrimary
                 )
-                if (isRoomOwner) {
+                if (isRoomOwner && !isDm) {
                     Text(
                         text = stringResource(R.string.owner_label),
                         fontSize = 12.sp,
@@ -386,6 +402,9 @@ private fun ChatTopBar(
                     tint = MaterialTheme.colorScheme.onPrimary
                 )
             }
+
+            // A DM has no member list, room code or owner menu.
+            if (isDm) return@TopAppBar
 
             // Shows who is in the room (and who is online); the count is part of the description
             // so screen readers announce it too.

@@ -1,6 +1,7 @@
 package com.example.wishpchatroom.data.remote
 
 import com.example.wishpchatroom.data.FirestoreCollections
+import com.example.wishpchatroom.data.isDmRoom
 import com.example.wishpchatroom.data.Presence
 import com.example.wishpchatroom.data.ReplyRef
 import com.example.wishpchatroom.data.Resource
@@ -90,7 +91,26 @@ class FirestoreChatRemoteDataSource @Inject constructor(
                 )
             }
             // Membership and "room is open" are enforced by the security rules.
-            messagesRef(roomCode).document(id).set(data).await()
+            val messageRef = messagesRef(roomCode).document(id)
+            if (isDmRoom(roomCode)) {
+                // A DM also refreshes the preview the inbox shows, in the same atomic write.
+                firestore.batch()
+                    .set(messageRef, data)
+                    .update(
+                        roomRef(roomCode),
+                        mapOf(
+                            "lastMessage" to mapOf(
+                                "text" to messageText.take(PREVIEW_LENGTH),
+                                "uid" to uid,
+                                "at" to FieldValue.serverTimestamp()
+                            ),
+                            "lastMessageAt" to FieldValue.serverTimestamp()
+                        )
+                    )
+                    .commit().await()
+            } else {
+                messageRef.set(data).await()
+            }
             Resource.Success(Unit)
         } catch (e: Exception) {
             // A retry of a write that did reach the server is rejected (messages cannot be
@@ -301,5 +321,8 @@ class FirestoreChatRemoteDataSource @Inject constructor(
 
     private companion object {
         const val DELETE_BATCH_SIZE = 400L
+
+        // Must match the limit in firestore.rules.
+        const val PREVIEW_LENGTH = 100
     }
 }

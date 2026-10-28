@@ -63,12 +63,7 @@ class FirestoreUserRepository @Inject constructor(
 
             // Profile data first, while the rules still see us as the owner; the Auth user last so
             // a failure in between leaves an account the user can still sign in to and retry.
-            val userDoc = firestore.collection(FirestoreCollections.USERS).document(user.uid)
-            val blocks = userDoc.collection(FirestoreCollections.BLOCKS).get().await()
-            firestore.batch().apply {
-                blocks.documents.forEach { delete(it.reference) }
-                delete(userDoc)
-            }.commit().await()
+            deleteProfileData(user.uid)
 
             user.delete().await()
             clearLocalData()
@@ -76,6 +71,34 @@ class FirestoreUserRepository @Inject constructor(
         } catch (e: Exception) {
             Resource.Error(e.toUserMessage("Could not delete the account. Please try again."))
         }
+    }
+
+    private suspend fun deleteProfileData(uid: String) {
+        val userDoc = firestore.collection(FirestoreCollections.USERS).document(uid)
+        val handle = userDoc.get().await().getString("handle")
+        val blocks = userDoc.collection(FirestoreCollections.BLOCKS).get().await()
+        val chats = userDoc.collection(FirestoreCollections.CHATS).get().await()
+        val friends = userDoc.collection(FirestoreCollections.FRIENDS).get().await()
+        val requests = firestore.collection(FirestoreCollections.FRIEND_REQUESTS)
+        val sent = requests.whereEqualTo("from", uid).get().await()
+        val received = requests.whereEqualTo("to", uid).get().await()
+
+        // Every document that belongs to this user, in one batch (a user has far fewer than 500).
+        // Friend docs are removed on both sides and the handle is released for others to claim.
+        firestore.batch().apply {
+            blocks.documents.forEach { delete(it.reference) }
+            chats.documents.forEach { delete(it.reference) }
+            friends.documents.forEach { friend ->
+                delete(friend.reference)
+                delete(
+                    firestore.collection(FirestoreCollections.USERS).document(friend.id)
+                        .collection(FirestoreCollections.FRIENDS).document(uid)
+                )
+            }
+            (sent.documents + received.documents).forEach { delete(it.reference) }
+            if (handle != null) delete(firestore.collection(FirestoreCollections.HANDLES).document(handle))
+            delete(userDoc)
+        }.commit().await()
     }
 
     override fun isLoggedIn(): Boolean = auth.currentUser != null

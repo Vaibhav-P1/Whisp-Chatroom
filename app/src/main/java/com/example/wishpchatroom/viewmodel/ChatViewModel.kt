@@ -3,12 +3,14 @@ package com.example.wishpchatroom.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.wishpchatroom.data.Ban
+import com.example.wishpchatroom.data.ContactsRepository
 import com.example.wishpchatroom.data.ChatRepository
 import com.example.wishpchatroom.data.Message
 import com.example.wishpchatroom.data.ModerationRepository
 import com.example.wishpchatroom.data.Presence
 import com.example.wishpchatroom.data.ReplyRef
 import com.example.wishpchatroom.data.ReportCategory
+import com.example.wishpchatroom.data.isDmRoom
 import com.example.wishpchatroom.data.Resource
 import com.example.wishpchatroom.data.Room
 import com.example.wishpchatroom.data.toUserMessage
@@ -66,14 +68,20 @@ data class ChatUiState(
     // The owner's ban list, loaded while the members dialog is open.
     val bans: List<Ban> = emptyList(),
     // A short confirmation such as "Report sent", shown once.
-    val infoMessage: String? = null
+    val infoMessage: String? = null,
+    // A direct message with a friend: no room code, members list, close or delete.
+    val isDm: Boolean = false,
+    val dmPeerName: String? = null,
+    // A locked DM keeps its history but takes no new messages (the friend was removed or blocked).
+    val isLocked: Boolean = false
 )
 
 @OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class)
 @HiltViewModel
 class ChatViewModel @Inject constructor(
     private val chatRepository: ChatRepository,
-    private val moderationRepository: ModerationRepository
+    private val moderationRepository: ModerationRepository,
+    private val contactsRepository: ContactsRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ChatUiState())
@@ -97,6 +105,7 @@ class ChatViewModel @Inject constructor(
 
     /** Starts following the room: its status (open, closed, deleted), its members and who is online. */
     fun loadRoom(roomCode: String) {
+        if (isDmRoom(roomCode)) viewModelScope.launch { contactsRepository.markRead(roomCode) }
         blocksJob?.cancel()
         blocksJob = viewModelScope.launch {
             moderationRepository.observeBlockedUids()
@@ -156,7 +165,10 @@ class ChatViewModel @Inject constructor(
                 isOwner = room.creatorUid == uid,
                 roomUsername = room.members[uid],
                 roomStatus = if (room.roomOpen) RoomStatus.OPEN else RoomStatus.CLOSED,
-                members = members
+                members = members,
+                isDm = room.type == "dm",
+                dmPeerName = room.members.entries.firstOrNull { e -> e.key != uid }?.value,
+                isLocked = room.locked
             )
         }
     }
@@ -469,6 +481,7 @@ class ChatViewModel @Inject constructor(
     private suspend fun leaveRoomInternal(roomCode: String, onDone: () -> Unit) {
         if (isLeaving) return
         isLeaving = true
+        if (isDmRoom(roomCode)) contactsRepository.markRead(roomCode)
         stopListening()
         updatePresenceInternal(roomCode, false)
         chatRepository.deleteIfTemporaryOwner(roomCode)

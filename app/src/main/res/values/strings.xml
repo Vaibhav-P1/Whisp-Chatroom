@@ -91,6 +91,42 @@
     <string name="message_failed_retry">Not sent. Tap to retry</string>
     <string name="send">Send</string>
 
+    <!-- Friends and messages -->
+    <string name="friends_title">Friends</string>
+    <string name="inbox_title">Messages</string>
+    <string name="inbox_empty">No conversations yet. Add a friend to start one.</string>
+    <string name="inbox_no_messages">No messages yet</string>
+    <string name="inbox_locked">Conversation locked</string>
+    <string name="archived_count">Archived (%1$d)</string>
+    <string name="pin">Pin</string>
+    <string name="unpin">Unpin</string>
+    <string name="mute">Mute</string>
+    <string name="unmute">Unmute</string>
+    <string name="archive">Archive</string>
+    <string name="unarchive">Move to inbox</string>
+    <string name="your_handle">Your handle</string>
+    <string name="change_handle">Change handle</string>
+    <string name="handle_hint">Friends find you by this handle. 4 to 20 characters: lowercase letters, numbers, underscores. You can change it once every 30 days.</string>
+    <string name="handle_label">Handle</string>
+    <string name="save_handle">Save handle</string>
+    <string name="add_friend">Add a friend</string>
+    <string name="friend_handle_label">Their handle</string>
+    <string name="send_request">Send request</string>
+    <string name="requests_received">Requests for you (%1$d)</string>
+    <string name="requests_sent">Requests you sent (%1$d)</string>
+    <string name="request_pending">Waiting for a reply</string>
+    <string name="accept">Accept</string>
+    <string name="decline">Decline</string>
+    <string name="friends_count">Friends (%1$d)</string>
+    <string name="friends_empty">You have no friends yet. Claim a handle, then send a request to a friend handle.</string>
+    <string name="message_friend">Message</string>
+    <string name="remove_friend">Remove</string>
+    <string name="remove_friend_title">Remove @%1$s?</string>
+    <string name="remove_friend_message">You will no longer be friends. Your chat history is kept but locked, so neither of you can send new messages.</string>
+    <string name="dm_locked_banner">This conversation is locked. You can read the history, but no new messages can be sent.</string>
+    <string name="open_messages">Messages</string>
+    <string name="open_friends">Friends</string>
+
     <!-- Safety -->
     <string name="report">Report</string>
     <string name="report_title">Report %1$s</string>
