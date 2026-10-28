@@ -262,8 +262,12 @@ service cloud.firestore {
 
     match /rooms/{roomCode} {
       // The room code is the secret: rooms can be fetched by code but never listed.
-      allow get: if signedIn() && !dataGone(resource.data)
-        && (isCodeRoom(resource.data) || request.auth.uid in resource.data.members);
+      // Reading a room that does not exist is allowed (resource is null): the app does that before it
+      // creates a room or joins by code, and it reveals nothing.
+      allow get: if signedIn()
+        && (resource == null
+            || (!dataGone(resource.data)
+                && (isCodeRoom(resource.data) || request.auth.uid in resource.data.members)));
       allow list: if false;
 
       // A direct message: a deterministic two-member room between two friends, created in the batch
