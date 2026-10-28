@@ -6,4 +6,8 @@ object FirestoreCollections {
     const val ROOMS = "rooms"
     const val MESSAGES = "messages"
     const val PRESENCE = "presence"
+    const val BLOCKS = "blocks"
+    const val BANS = "bans"
+    const val MODLOG = "modlog"
+    const val REPORTS = "reports"
 }

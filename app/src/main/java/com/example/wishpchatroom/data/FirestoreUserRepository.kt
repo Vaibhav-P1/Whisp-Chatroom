@@ -1,7 +1,9 @@
 package com.example.wishpchatroom.data
 
 import com.example.wishpchatroom.data.local.AppDatabase
+import com.google.firebase.auth.EmailAuthProvider
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.FirebaseAuthException
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.tasks.await
@@ -40,6 +42,41 @@ class FirestoreUserRepository @Inject constructor(
         } catch (e: Exception) {
             Resource.Error(e.toUserMessage("Login failed. Please try again."))
         }
+
+    override suspend fun sendPasswordReset(email: String): Resource<Unit> =
+        try {
+            auth.sendPasswordResetEmail(email.trim()).await()
+            Resource.Success(Unit)
+        } catch (e: FirebaseAuthException) {
+            // Do not reveal whether an account exists for this address.
+            if (e.errorCode == "ERROR_USER_NOT_FOUND") Resource.Success(Unit)
+            else Resource.Error(e.toUserMessage("Could not send the reset email. Please try again."))
+        } catch (e: Exception) {
+            Resource.Error(e.toUserMessage("Could not send the reset email. Please try again."))
+        }
+
+    override suspend fun deleteAccount(password: String): Resource<Unit> {
+        val user = auth.currentUser ?: return Resource.Error("You must be logged in")
+        val email = user.email ?: return Resource.Error("This account cannot be deleted from the app.")
+        return try {
+            user.reauthenticate(EmailAuthProvider.getCredential(email, password)).await()
+
+            // Profile data first, while the rules still see us as the owner; the Auth user last so
+            // a failure in between leaves an account the user can still sign in to and retry.
+            val userDoc = firestore.collection(FirestoreCollections.USERS).document(user.uid)
+            val blocks = userDoc.collection(FirestoreCollections.BLOCKS).get().await()
+            firestore.batch().apply {
+                blocks.documents.forEach { delete(it.reference) }
+                delete(userDoc)
+            }.commit().await()
+
+            user.delete().await()
+            clearLocalData()
+            Resource.Success(Unit)
+        } catch (e: Exception) {
+            Resource.Error(e.toUserMessage("Could not delete the account. Please try again."))
+        }
+    }
 
     override fun isLoggedIn(): Boolean = auth.currentUser != null
 

@@ -5,6 +5,8 @@ import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onLast
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -66,7 +68,7 @@ class LoginScreenTest {
         showScreen()
         composeRule.onNodeWithText(string(R.string.email_address)).performTextInput("ada@x.com")
         composeRule.onNodeWithText(string(R.string.password)).performTextInput("secret1")
-        composeRule.onNodeWithText(string(R.string.sign_in)).performClick()
+        composeRule.onNodeWithText(string(R.string.sign_in)).performScrollTo().performClick()
 
         composeRule.waitForIdle()
         assertEquals("ada@x.com" to "secret1", repo.lastLogin)
@@ -78,9 +80,23 @@ class LoginScreenTest {
         showScreen()
         composeRule.onNodeWithText(string(R.string.email_address)).performTextInput("ada@x.com")
         composeRule.onNodeWithText(string(R.string.password)).performTextInput("wrong")
-        composeRule.onNodeWithText(string(R.string.sign_in)).performClick()
+        composeRule.onNodeWithText(string(R.string.sign_in)).performScrollTo().performClick()
 
         composeRule.onNodeWithText("Incorrect email or password.").assertExists()
+    }
+
+    @Test
+    fun `forgot password asks for an email and confirms without revealing the account`() {
+        showScreen()
+        composeRule.onNodeWithText(string(R.string.forgot_password)).performScrollTo().performClick()
+        composeRule.onNodeWithText(string(R.string.reset_password_title)).assertExists()
+
+        composeRule.onAllNodesWithText(string(R.string.email_address)).onLast().performTextInput("ada@x.com")
+        composeRule.onNodeWithText(string(R.string.reset_password_send)).performClick()
+
+        composeRule.waitForIdle()
+        assertEquals("ada@x.com", repo.resetEmail)
+        composeRule.onNodeWithText(string(R.string.reset_password_sent)).assertExists()
     }
 
     @Test

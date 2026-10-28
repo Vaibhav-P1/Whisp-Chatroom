@@ -13,6 +13,7 @@ fun Throwable.toUserMessage(fallback: String): String = when (this) {
             "Incorrect email or password."
         "ERROR_EMAIL_ALREADY_IN_USE" -> "An account already exists for that email."
         "ERROR_WEAK_PASSWORD" -> "Password must be at least 6 characters."
+        "ERROR_REQUIRES_RECENT_LOGIN" -> "Please sign in again, then retry."
         "ERROR_USER_DISABLED" -> "This account has been disabled."
         "ERROR_TOO_MANY_REQUESTS" -> "Too many attempts. Please try again later."
         else -> fallback

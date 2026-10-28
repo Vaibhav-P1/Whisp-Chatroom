@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -35,6 +36,7 @@ fun LoginScreen(
     var password by remember { mutableStateOf("") }
 
     val uiState by authViewModel.uiState.collectAsStateWithLifecycle()
+    var showReset by remember { mutableStateOf(false) }
     val canSubmit = email.isNotBlank() && password.isNotBlank()
 
     // Do not show an error left over from the other auth screen.
@@ -61,7 +63,14 @@ fun LoginScreen(
                 onValueChange = { password = it }
             )
 
-            uiState.errorMessage?.let { ErrorCard(message = it) }
+            TextButton(onClick = {
+                authViewModel.clearError()
+                showReset = true
+            }) {
+                Text(stringResource(R.string.forgot_password))
+            }
+
+            uiState.errorMessage?.let { if (!showReset) ErrorCard(message = it) }
 
             Spacer(modifier = Modifier.height(8.dp))
 
@@ -78,6 +87,21 @@ fun LoginScreen(
             action = stringResource(R.string.sign_up),
             onClick = onNavigateToSignUp,
             topPadding = 32.dp
+        )
+    }
+
+    if (showReset) {
+        ForgotPasswordDialog(
+            initialEmail = email,
+            isLoading = uiState.isLoading,
+            errorMessage = uiState.errorMessage,
+            sent = uiState.resetEmailSent,
+            onSend = authViewModel::sendPasswordReset,
+            onDismiss = {
+                showReset = false
+                authViewModel.dismissResetConfirmation()
+                authViewModel.clearError()
+            }
         )
     }
 }

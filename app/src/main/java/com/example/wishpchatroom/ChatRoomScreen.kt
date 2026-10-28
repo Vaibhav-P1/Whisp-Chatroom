@@ -21,6 +21,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -58,6 +59,7 @@ fun ChatRoomScreen(
     var isCreateMode by remember { mutableStateOf(true) }
     var isTemporary by remember { mutableStateOf(false) }
     var useSavedUsername by remember { mutableStateOf(false) }
+    var showDeleteAccount by remember { mutableStateOf(false) }
 
     val roomState by roomViewModel.uiState.collectAsStateWithLifecycle()
     val authState by authViewModel.uiState.collectAsStateWithLifecycle()
@@ -70,6 +72,11 @@ fun ChatRoomScreen(
             }
             onJoinRoom(enteredRoomCode)
         }
+    }
+
+    // The account is gone: leave the signed-in screens (the Auth user and local cache are already cleared).
+    LaunchedEffect(Unit) {
+        authViewModel.accountDeleted.collect { onNavigateToLogin() }
     }
 
     Column(
@@ -130,8 +137,21 @@ fun ChatRoomScreen(
             onLogout = {
                 authViewModel.logout()
                 onNavigateToLogin()
-            }
+            },
+            onDeleteAccount = { showDeleteAccount = true }
         )
+
+        if (showDeleteAccount) {
+            DeleteAccountDialog(
+                isDeleting = authState.isDeleting,
+                errorMessage = authState.deleteError,
+                onConfirm = authViewModel::deleteAccount,
+                onDismiss = {
+                    showDeleteAccount = false
+                    authViewModel.clearDeleteError()
+                }
+            )
+        }
     }
 }
 
@@ -304,7 +324,8 @@ private fun LabeledCheckbox(
 @Composable
 private fun AccountCard(
     user: User?,
-    onLogout: () -> Unit
+    onLogout: () -> Unit,
+    onDeleteAccount: () -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -339,6 +360,13 @@ private fun AccountCard(
                 Text(
                     text = stringResource(R.string.logout),
                     fontSize = 16.sp
+                )
+            }
+
+            TextButton(onClick = onDeleteAccount) {
+                Text(
+                    text = stringResource(R.string.delete_account),
+                    color = MaterialTheme.colorScheme.error
                 )
             }
         }

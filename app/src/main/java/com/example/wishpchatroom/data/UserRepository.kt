@@ -5,6 +5,18 @@ interface UserRepository {
 
     suspend fun login(email: String, password: String): Resource<Boolean>
 
+    /**
+     * Asks Firebase to email a reset link. An address with no account still reports success so the
+     * response never reveals which emails are registered.
+     */
+    suspend fun sendPasswordReset(email: String): Resource<Unit>
+
+    /**
+     * Permanently deletes the signed-in account: re-authenticates with [password], removes the
+     * user's profile and block list, clears the local cache and deletes the Auth user.
+     */
+    suspend fun deleteAccount(password: String): Resource<Unit>
+
     fun isLoggedIn(): Boolean
 
     suspend fun getCurrentUser(): User?
