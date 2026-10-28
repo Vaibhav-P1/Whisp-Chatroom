@@ -106,6 +106,58 @@ class FakeModerationRepository : ModerationRepository {
     override fun observeBans(roomCode: String): Flow<List<Ban>> = bans
 }
 
+class FakeMissionRepository : com.example.wishpchatroom.data.MissionRepository {
+    val tasks = MutableStateFlow<List<com.example.wishpchatroom.data.MissionTask>>(emptyList())
+    val notes = MutableStateFlow<List<com.example.wishpchatroom.data.SavedNote>>(emptyList())
+    var result: Resource<Unit> = Resource.Success(Unit)
+    val added = mutableListOf<Pair<String, Long>>()
+    val toggled = mutableListOf<Pair<String, Boolean>>()
+    val deleted = mutableListOf<String>()
+    val announcements = mutableListOf<String>()
+    val outcomes = mutableListOf<String>()
+    val saved = mutableListOf<List<String>>()
+    val deletedNotes = mutableListOf<String>()
+
+    override fun observeTasks(roomCode: String) = tasks
+
+    override suspend fun addTask(roomCode: String, text: String, order: Long): Resource<Unit> {
+        added += text to order
+        return result
+    }
+
+    override suspend fun setTaskDone(roomCode: String, taskId: String, done: Boolean): Resource<Unit> {
+        toggled += taskId to done
+        return result
+    }
+
+    override suspend fun deleteTask(roomCode: String, taskId: String): Resource<Unit> {
+        deleted += taskId
+        return result
+    }
+
+    override suspend fun setAnnouncement(roomCode: String, text: String): Resource<Unit> {
+        announcements += text
+        return result
+    }
+
+    override suspend fun setOutcome(roomCode: String, text: String): Resource<Unit> {
+        outcomes += text
+        return result
+    }
+
+    override suspend fun saveNote(roomTitle: String, author: String, text: String, source: String): Resource<Unit> {
+        saved += listOf(roomTitle, author, text, source)
+        return result
+    }
+
+    override fun observeSavedNotes() = notes
+
+    override suspend fun deleteNote(noteId: String): Resource<Unit> {
+        deletedNotes += noteId
+        return result
+    }
+}
+
 class FakeContactsRepository : com.example.wishpchatroom.data.ContactsRepository {
     override var currentUid: String? = "me"
 

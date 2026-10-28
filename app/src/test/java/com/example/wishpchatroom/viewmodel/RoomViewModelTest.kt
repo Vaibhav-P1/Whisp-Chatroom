@@ -20,9 +20,15 @@ class RoomViewModelTest {
         var joinResult: Resource<Boolean> = Resource.Success(true)
         var joinedCode: String? = null
         var createdTemporary: Boolean? = null
+        var createdMission: com.example.wishpchatroom.data.MissionSpec? = null
 
-        override suspend fun createRoom(username: String, isTemporary: Boolean): Resource<String> {
+        override suspend fun createRoom(
+            username: String,
+            isTemporary: Boolean,
+            mission: com.example.wishpchatroom.data.MissionSpec?
+        ): Resource<String> {
             createdTemporary = isTemporary
+            createdMission = mission
             return createResult
         }
 
@@ -43,6 +49,19 @@ class RoomViewModelTest {
         }
         assertEquals(true, repo.createdTemporary)
         assertFalse(vm.uiState.value.isLoading)
+    }
+
+    @Test
+    fun `a mission room is created with its spec and is never also temporary`() = runTest {
+        val repo = FakeRoomRepository()
+        val vm = RoomViewModel(repo)
+        val spec = com.example.wishpchatroom.data.MissionSpec("Ship it", "Demo", 21_600)
+        vm.roomEntered.test {
+            vm.createRoom("ada", isTemporary = true, mission = spec)
+            awaitItem()
+        }
+        assertEquals(spec, repo.createdMission)
+        assertEquals(false, repo.createdTemporary)
     }
 
     @Test

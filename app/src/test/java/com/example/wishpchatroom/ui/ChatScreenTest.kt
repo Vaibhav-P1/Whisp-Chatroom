@@ -17,9 +17,11 @@ import com.example.wishpchatroom.data.Resource
 import com.example.wishpchatroom.data.Room
 import com.example.wishpchatroom.testing.FakeChatRepository
 import com.example.wishpchatroom.testing.FakeContactsRepository
+import com.example.wishpchatroom.testing.FakeMissionRepository
 import com.example.wishpchatroom.testing.FakeModerationRepository
 import com.example.wishpchatroom.ui.theme.WishpChatRoomTheme
 import com.example.wishpchatroom.viewmodel.ChatViewModel
+import com.example.wishpchatroom.viewmodel.MissionViewModel
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -54,7 +56,8 @@ class ChatScreenTest {
                 ChatScreen(
                     roomCode = code,
                     onNavigateBack = { leftChat++ },
-                    chatViewModel = ChatViewModel(repo, FakeModerationRepository(), FakeContactsRepository())
+                    chatViewModel = ChatViewModel(repo, FakeModerationRepository(), FakeContactsRepository()),
+                    missionViewModel = MissionViewModel(FakeMissionRepository())
                 )
             }
         }
@@ -105,6 +108,41 @@ class ChatScreenTest {
         composeRule.onNodeWithContentDescription(string(R.string.send)).performClick()
 
         composeRule.onNodeWithText("You don't have permission to do that.").assertExists()
+    }
+
+    private fun missionRoom(createdAgoMs: Long, durationSeconds: Long = 1_800) = Room(
+        roomCode = code, creatorUid = "me", members = mapOf("me" to "ada", "u2" to "bob"),
+        timestamp = java.util.Date(System.currentTimeMillis() - createdAgoMs),
+        mission = com.example.wishpchatroom.data.Mission(
+            title = "Ship it", goal = "Demo", announcement = "Stand-up at ten", durationSeconds = durationSeconds
+        )
+    )
+
+    @Test
+    fun `an active mission shows its title, countdown and announcement and allows typing`() {
+        repo.room.value = missionRoom(createdAgoMs = 60_000)
+        showChat()
+        composeRule.onNodeWithText("🎯 Ship it").assertExists()
+        composeRule.onNodeWithText("Stand-up at ten").assertExists()
+        composeRule.onNode(hasSetTextAction()).assertIsEnabled()
+    }
+
+    @Test
+    fun `an ended mission shows the read-only banner and locks the input`() {
+        repo.room.value = missionRoom(createdAgoMs = 2 * 60 * 60 * 1000)
+        showChat()
+        composeRule.onNodeWithText(string(R.string.mission_ended_short)).assertExists()
+        composeRule.onNodeWithText(string(R.string.mission_ended_banner)).assertExists()
+        composeRule.onNode(hasSetTextAction()).assertIsNotEnabled()
+    }
+
+    @Test
+    fun `tapping the banner opens the mission details`() {
+        repo.room.value = missionRoom(createdAgoMs = 60_000)
+        showChat()
+        composeRule.onNodeWithText("🎯 Ship it").performClick()
+        composeRule.onNodeWithText(string(R.string.mission_checklist)).assertExists()
+        composeRule.onNodeWithText(string(R.string.mission_outcome)).assertExists()
     }
 
     @Test
