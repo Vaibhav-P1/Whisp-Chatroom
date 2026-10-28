@@ -189,7 +189,7 @@ class ChatScreenTest {
     @Test
     fun `choosing a whisper lifetime sends the message as a whisper`() {
         showChat()
-        composeRule.onNodeWithText("🔒 1 minute").performClick()
+        composeRule.onNodeWithText("🔒 1 min").performClick()
         composeRule.onNode(hasSetTextAction()).performTextInput("psst")
         composeRule.onNodeWithContentDescription(string(R.string.send)).performClick()
         composeRule.waitForIdle()

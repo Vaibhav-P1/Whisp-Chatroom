@@ -130,6 +130,8 @@
     <!-- Whispers -->
     <string name="whisper">Whisper</string>
     <string name="whisper_off">Normal</string>
+    <string name="dm_locked_hint">Conversation is locked</string>
+    <string name="mission_ended_hint">Mission has ended</string>
     <string name="whisper_hint">Whisper messages hide themselves for everyone a short while after someone else opens them. Recipients may still copy or photograph them.</string>
     <string name="whisper_sealed">🔒 Whisper. Tap to open. It hides %1$s after you open it.</string>
     <string name="whisper_waiting">Whisper · hides %1$s after it is opened</string>

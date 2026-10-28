@@ -241,7 +241,7 @@ fun MessageCard(
                     )
                 }
 
-                if (message.isWhisper && !message.deleted) {
+                if (message.isWhisper && !message.deleted && !sealed) {
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = when {
@@ -509,7 +509,9 @@ fun MessageInput(
     onSend: () -> Unit,
     // Seconds a whisper lasts after it is opened, or null for a normal message.
     whisperTtl: Long? = null,
-    onWhisperTtlChange: ((Long?) -> Unit)? = null
+    onWhisperTtlChange: ((Long?) -> Unit)? = null,
+    // Shown instead of the normal hint while the box is disabled (closed room, locked DM, ended mission).
+    disabledHint: Int = R.string.room_closed_hint
 ) {
     Card(
         modifier = Modifier
@@ -530,11 +532,11 @@ fun MessageInput(
                     onClick = { onWhisperTtlChange(null) },
                     label = { Text(stringResource(R.string.whisper_off), fontSize = 12.sp) }
                 )
-                WhisperLifetimes.forEach { (seconds, label) ->
+                WhisperLifetimes.forEach { (seconds, _) ->
                     FilterChip(
                         selected = whisperTtl == seconds,
                         onClick = { onWhisperTtlChange(seconds) },
-                        label = { Text("🔒 " + label, fontSize = 12.sp) }
+                        label = { Text("🔒 " + shortLifetime(seconds), fontSize = 12.sp, maxLines = 1) }
                     )
                 }
             }
@@ -559,7 +561,7 @@ fun MessageInput(
                 enabled = enabled,
                 placeholder = {
                     Text(
-                        stringResource(if (enabled) R.string.message_hint else R.string.room_closed_hint),
+                        stringResource(if (enabled) R.string.message_hint else disabledHint),
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                     )
                 },
@@ -581,3 +583,9 @@ fun MessageInput(
 
 private fun whisperLifetimeLabel(ttlSeconds: Long?): String =
     WhisperLifetimes.firstOrNull { it.first == ttlSeconds }?.second ?: "a short while"
+
+private fun shortLifetime(seconds: Long): String = when {
+    seconds < 60 -> "${seconds}s"
+    seconds < 3_600 -> "${seconds / 60} min"
+    else -> "${seconds / 3_600} h"
+}

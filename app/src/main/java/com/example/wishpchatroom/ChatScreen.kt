@@ -400,6 +400,11 @@ fun ChatScreen(
                         messageText = ""
                     }
                 },
+                disabledHint = when {
+                    uiState.isLocked -> R.string.dm_locked_hint
+                    missionPhase != MissionPhase.ACTIVE -> R.string.mission_ended_hint
+                    else -> R.string.room_closed_hint
+                },
                 whisperTtl = whisperTtl,
                 // Editing a message is never a whisper; the selector is hidden meanwhile.
                 onWhisperTtlChange = if (uiState.editing == null) ({ whisperTtl = it }) else null
