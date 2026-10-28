@@ -2,10 +2,13 @@ package com.example.wishpchatroom.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.wishpchatroom.data.Ban
 import com.example.wishpchatroom.data.ChatRepository
 import com.example.wishpchatroom.data.Message
+import com.example.wishpchatroom.data.ModerationRepository
 import com.example.wishpchatroom.data.Presence
 import com.example.wishpchatroom.data.ReplyRef
+import com.example.wishpchatroom.data.ReportCategory
 import com.example.wishpchatroom.data.Resource
 import com.example.wishpchatroom.data.Room
 import com.example.wishpchatroom.data.toUserMessage
@@ -30,7 +33,8 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-enum class RoomStatus { OPEN, CLOSED, DELETED }
+// REMOVED: the owner kicked this user, so the room is no longer readable for them.
+enum class RoomStatus { OPEN, CLOSED, DELETED, REMOVED }
 
 data class Member(
     val uid: String,
@@ -56,13 +60,20 @@ data class ChatUiState(
     val editing: Message? = null,
     val isSearching: Boolean = false,
     val searchQuery: String = "",
-    val searchResults: List<Message> = emptyList()
+    val searchResults: List<Message> = emptyList(),
+    // Users this person blocked: their messages are collapsed and left out of search (on this device only).
+    val blockedUids: Set<String> = emptySet(),
+    // The owner's ban list, loaded while the members dialog is open.
+    val bans: List<Ban> = emptyList(),
+    // A short confirmation such as "Report sent", shown once.
+    val infoMessage: String? = null
 )
 
 @OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class)
 @HiltViewModel
 class ChatViewModel @Inject constructor(
-    private val chatRepository: ChatRepository
+    private val chatRepository: ChatRepository,
+    private val moderationRepository: ModerationRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ChatUiState())
@@ -73,6 +84,8 @@ class ChatViewModel @Inject constructor(
     private var roomJob: Job? = null
     private var heartbeatJob: Job? = null
     private var searchJob: Job? = null
+    private var blocksJob: Job? = null
+    private var bansJob: Job? = null
     private var isLeaving = false
 
     private val searchQuery = MutableStateFlow("")
@@ -84,6 +97,12 @@ class ChatViewModel @Inject constructor(
 
     /** Starts following the room: its status (open, closed, deleted), its members and who is online. */
     fun loadRoom(roomCode: String) {
+        blocksJob?.cancel()
+        blocksJob = viewModelScope.launch {
+            moderationRepository.observeBlockedUids()
+                .catch { emit(emptySet()) }
+                .collect { blocked -> _uiState.update { it.copy(blockedUids = blocked) } }
+        }
         roomJob?.cancel()
         roomJob = viewModelScope.launch {
             // Presence is a nice-to-have: if its listener fails (for example because the room was just
@@ -108,6 +127,11 @@ class ChatViewModel @Inject constructor(
         }
 
         val uid = chatRepository.currentUid
+        // The owner removed this user: the members map no longer has them.
+        if (uid != null && uid !in room.members && !isLeaving) {
+            _uiState.update { it.copy(roomStatus = RoomStatus.REMOVED) }
+            return
+        }
         val presenceByUid = presence.associateBy { it.uid }
         val members = room.members
             .map { (memberUid, username) ->
@@ -154,7 +178,7 @@ class ChatViewModel @Inject constructor(
                 throw e
             } catch (e: Exception) {
                 // Expected when the room was just deleted; the room status already tells the user.
-                if (_uiState.value.roomStatus != RoomStatus.DELETED && !isLeaving) {
+                if (_uiState.value.roomStatus !in TERMINAL_STATUSES && !isLeaving) {
                     showError(e.toUserMessage("Could not load messages."))
                 }
             }
@@ -301,6 +325,85 @@ class ChatViewModel @Inject constructor(
         _uiState.update { it.copy(errorMessage = null) }
     }
 
+    fun clearInfo() {
+        _uiState.update { it.copy(infoMessage = null) }
+    }
+
+    fun blockUser(uid: String) {
+        viewModelScope.launch {
+            when (val result = moderationRepository.blockUser(uid)) {
+                is Resource.Success -> _uiState.update { it.copy(infoMessage = "User blocked. Their messages are hidden on this device.") }
+                is Resource.Error -> showError(result.message)
+            }
+        }
+    }
+
+    fun unblockUser(uid: String) {
+        viewModelScope.launch {
+            val result = moderationRepository.unblockUser(uid)
+            if (result is Resource.Error) showError(result.message)
+        }
+    }
+
+    fun reportMessage(roomCode: String, message: Message, category: ReportCategory, description: String) {
+        reportUser(roomCode, message.uid, message.id, message.messageText, category, description)
+    }
+
+    fun reportUser(
+        roomCode: String,
+        targetUid: String,
+        messageId: String?,
+        messageText: String?,
+        category: ReportCategory,
+        description: String
+    ) {
+        viewModelScope.launch {
+            val result = moderationRepository.reportUser(
+                roomCode, targetUid, messageId, messageText, category, description
+            )
+            when (result) {
+                is Resource.Success -> _uiState.update { it.copy(infoMessage = "Report sent. Thank you.") }
+                is Resource.Error -> showError(result.message)
+            }
+        }
+    }
+
+    /** Owner only. Removes the member, bans them from rejoining and logs it in one batch. */
+    fun removeAndBan(roomCode: String, member: Member) {
+        if (!_uiState.value.isOwner || member.isYou) return
+        viewModelScope.launch {
+            val result = moderationRepository.removeAndBan(roomCode, member.uid, member.username)
+            if (result is Resource.Error) showError(result.message)
+        }
+    }
+
+    fun unban(roomCode: String, ban: Ban) {
+        viewModelScope.launch {
+            val result = moderationRepository.unban(roomCode, ban.uid)
+            if (result is Resource.Error) showError(result.message)
+        }
+    }
+
+    /** Owner only: follow the ban list while the members dialog is open. */
+    fun startWatchingBans(roomCode: String) {
+        if (!_uiState.value.isOwner) return
+        bansJob?.cancel()
+        bansJob = viewModelScope.launch {
+            moderationRepository.observeBans(roomCode)
+                .catch { emit(emptyList()) }
+                .collect { bans -> _uiState.update { it.copy(bans = bans) } }
+        }
+    }
+
+    fun stopWatchingBans() {
+        bansJob?.cancel()
+        bansJob = null
+        _uiState.update { it.copy(bans = emptyList()) }
+    }
+
+    /** The owner removed this user: forget the room on this device and go back. */
+    fun acknowledgeRemoved(roomCode: String, onDone: () -> Unit) = acknowledgeRoomDeleted(roomCode, onDone)
+
     /** Closes the room, then leaves it. A temporary room is deleted when its creator leaves. */
     fun closeRoom(roomCode: String, onDone: () -> Unit) {
         viewModelScope.launch {
@@ -404,6 +507,10 @@ class ChatViewModel @Inject constructor(
         roomJob?.cancel()
         heartbeatJob?.cancel()
         searchJob?.cancel()
+        blocksJob?.cancel()
+        bansJob?.cancel()
+        blocksJob = null
+        bansJob = null
         messagesJob = null
         syncJob = null
         roomJob = null
@@ -424,6 +531,8 @@ class ChatViewModel @Inject constructor(
     }
 
     private companion object {
+        val TERMINAL_STATUSES = setOf(RoomStatus.DELETED, RoomStatus.REMOVED)
+
         // How many of the newest cached messages the chat shows.
         const val MESSAGE_WINDOW = 100
 

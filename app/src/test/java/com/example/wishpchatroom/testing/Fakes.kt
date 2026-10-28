@@ -1,9 +1,12 @@
 package com.example.wishpchatroom.testing
 
+import com.example.wishpchatroom.data.Ban
 import com.example.wishpchatroom.data.ChatRepository
 import com.example.wishpchatroom.data.Message
+import com.example.wishpchatroom.data.ModerationRepository
 import com.example.wishpchatroom.data.Presence
 import com.example.wishpchatroom.data.ReplyRef
+import com.example.wishpchatroom.data.ReportCategory
 import com.example.wishpchatroom.data.Resource
 import com.example.wishpchatroom.data.Room
 import com.example.wishpchatroom.data.User
@@ -23,6 +26,10 @@ class FakeUserRepository : UserRepository {
     var cleared = false
     var lastLogin: Pair<String, String>? = null
     var lastSignUp: List<String>? = null
+    var resetResult: Resource<Unit> = Resource.Success(Unit)
+    var resetEmail: String? = null
+    var deleteResult: Resource<Unit> = Resource.Success(Unit)
+    var deletePassword: String? = null
 
     override suspend fun signUp(email: String, password: String, firstName: String, lastName: String): Resource<Boolean> {
         lastSignUp = listOf(email, password, firstName, lastName)
@@ -39,10 +46,64 @@ class FakeUserRepository : UserRepository {
         return loginResult
     }
 
+    override suspend fun sendPasswordReset(email: String): Resource<Unit> {
+        resetEmail = email
+        return resetResult
+    }
+
+    override suspend fun deleteAccount(password: String): Resource<Unit> {
+        deletePassword = password
+        if (deleteResult is Resource.Success) { loggedIn = false; user = null }
+        return deleteResult
+    }
+
     override fun isLoggedIn() = loggedIn
     override suspend fun getCurrentUser() = user
     override fun logout() { loggedIn = false; user = null }
     override suspend fun clearLocalData() { cleared = true }
+}
+
+class FakeModerationRepository : ModerationRepository {
+    val blocked = MutableStateFlow<Set<String>>(emptySet())
+    val bans = MutableStateFlow<List<Ban>>(emptyList())
+    var blockResult: Resource<Unit> = Resource.Success(Unit)
+    var reportResult: Resource<Unit> = Resource.Success(Unit)
+    var removeResult: Resource<Unit> = Resource.Success(Unit)
+    val reports = mutableListOf<List<Any?>>()
+    val removed = mutableListOf<Pair<String, String>>()
+    val unbanned = mutableListOf<String>()
+
+    override fun observeBlockedUids(): Flow<Set<String>> = blocked
+
+    override suspend fun blockUser(uid: String): Resource<Unit> {
+        if (blockResult is Resource.Success) blocked.value = blocked.value + uid
+        return blockResult
+    }
+
+    override suspend fun unblockUser(uid: String): Resource<Unit> {
+        blocked.value = blocked.value - uid
+        return Resource.Success(Unit)
+    }
+
+    override suspend fun reportUser(
+        roomCode: String, targetUid: String, messageId: String?, messageText: String?,
+        category: ReportCategory, description: String
+    ): Resource<Unit> {
+        reports += listOf(roomCode, targetUid, messageId, messageText, category, description)
+        return reportResult
+    }
+
+    override suspend fun removeAndBan(roomCode: String, targetUid: String, targetName: String): Resource<Unit> {
+        removed += targetUid to targetName
+        return removeResult
+    }
+
+    override suspend fun unban(roomCode: String, uid: String): Resource<Unit> {
+        unbanned += uid
+        return Resource.Success(Unit)
+    }
+
+    override fun observeBans(roomCode: String): Flow<List<Ban>> = bans
 }
 
 class FakeChatRepository : ChatRepository {

@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.DropdownMenu
+import androidx.compose.foundation.clickable
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -47,6 +48,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.wishpchatroom.data.Message
 import com.example.wishpchatroom.viewmodel.ChatViewModel
+import com.example.wishpchatroom.viewmodel.Member
 import com.example.wishpchatroom.viewmodel.RoomStatus
 
 @Composable
@@ -64,6 +66,9 @@ fun ChatScreen(
     // The message whose actions dialog is open, and the one waiting for delete confirmation.
     var actionsMessage by remember { mutableStateOf<Message?>(null) }
     var messageToDelete by remember { mutableStateOf<Message?>(null) }
+    var messageToReport by remember { mutableStateOf<Message?>(null) }
+    var userToBlock by remember { mutableStateOf<Message?>(null) }
+    var memberToRemove by remember { mutableStateOf<Member?>(null) }
 
     val uiState by chatViewModel.uiState.collectAsStateWithLifecycle()
     val isRoomOpen = uiState.roomStatus == RoomStatus.OPEN
@@ -93,10 +98,18 @@ fun ChatScreen(
         )
     }
 
+    // The owner's ban list is only followed while the members dialog is open.
+    LaunchedEffect(showMembers, uiState.isOwner) {
+        if (showMembers) chatViewModel.startWatchingBans(roomCode) else chatViewModel.stopWatchingBans()
+    }
+
     if (showMembers) {
         MembersDialog(
             members = uiState.members,
             isOwner = uiState.isOwner,
+            bans = uiState.bans,
+            onRemove = { memberToRemove = it },
+            onUnban = { chatViewModel.unban(roomCode, it) },
             onLeave = {
                 showMembers = false
                 showLeaveDialog = true
@@ -112,6 +125,45 @@ fun ChatScreen(
                 chatViewModel.leaveRoomPermanently(roomCode, onNavigateBack)
             },
             onDismiss = { showLeaveDialog = false }
+        )
+    }
+
+    memberToRemove?.let { member ->
+        RemoveMemberDialog(
+            memberName = member.username,
+            onConfirm = {
+                memberToRemove = null
+                chatViewModel.removeAndBan(roomCode, member)
+            },
+            onDismiss = { memberToRemove = null }
+        )
+    }
+
+    messageToReport?.let { message ->
+        ReportDialog(
+            targetName = message.username,
+            onSubmit = { category, description ->
+                messageToReport = null
+                chatViewModel.reportMessage(roomCode, message, category, description)
+            },
+            onDismiss = { messageToReport = null }
+        )
+    }
+
+    userToBlock?.let { message ->
+        BlockUserDialog(
+            userName = message.username,
+            onConfirm = {
+                userToBlock = null
+                chatViewModel.blockUser(message.uid)
+            },
+            onDismiss = { userToBlock = null }
+        )
+    }
+
+    if (uiState.roomStatus == RoomStatus.REMOVED) {
+        RoomRemovedDialog(
+            onConfirm = { chatViewModel.acknowledgeRemoved(roomCode, onNavigateBack) }
         )
     }
 
@@ -148,7 +200,15 @@ fun ChatScreen(
                 actionsMessage = null
                 messageToDelete = message
             },
-            onDismiss = { actionsMessage = null }
+            onDismiss = { actionsMessage = null },
+            onReport = {
+                actionsMessage = null
+                messageToReport = message
+            },
+            onBlock = {
+                actionsMessage = null
+                userToBlock = message
+            }
         )
     }
 
@@ -177,7 +237,7 @@ fun ChatScreen(
             )
             SearchResults(
                 query = uiState.searchQuery,
-                results = uiState.searchResults,
+                results = uiState.searchResults.filter { it.uid !in uiState.blockedUids },
                 currentUid = currentUid,
                 modifier = Modifier.weight(1f)
             )
@@ -213,8 +273,20 @@ fun ChatScreen(
                 onRetry = { messageId -> chatViewModel.retryMessage(roomCode, messageId) },
                 onMessageActions = { actionsMessage = it },
                 onToggleReaction = { messageId, emoji -> chatViewModel.toggleReaction(roomCode, messageId, emoji) },
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f),
+                blockedUids = uiState.blockedUids
             )
+
+            uiState.infoMessage?.let { info ->
+                Text(
+                    text = info,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontSize = 12.sp,
+                    modifier = Modifier
+                        .clickable { chatViewModel.clearInfo() }
+                        .padding(horizontal = 16.dp, vertical = 4.dp)
+                )
+            }
 
             uiState.errorMessage?.let { message ->
                 Text(

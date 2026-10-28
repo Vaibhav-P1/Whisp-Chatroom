@@ -17,6 +17,16 @@
     <string name="show_password">Show password</string>
     <string name="hide_password">Hide password</string>
 
+    <string name="forgot_password">Forgot password?</string>
+    <string name="reset_password_title">Reset password</string>
+    <string name="reset_password_message">Enter your account email and we will send you a link to choose a new password.</string>
+    <string name="reset_password_send">Send link</string>
+    <string name="reset_password_sent">If an account exists for that address, a reset link is on its way. Check your inbox and spam folder.</string>
+    <string name="delete_account">Delete account</string>
+    <string name="delete_account_title">Delete your account?</string>
+    <string name="delete_account_message">This permanently deletes your profile and block list and signs you out. Messages you already sent stay in their rooms under the name you used there, and rooms you own are not deleted. Enter your password to confirm.</string>
+    <string name="delete_account_confirm">Delete forever</string>
+
     <!-- Rooms -->
     <string name="app_title">WishP Chat Room</string>
     <string name="select_action">Select Action</string>
@@ -80,4 +90,25 @@
     <string name="message_sending">Sending…</string>
     <string name="message_failed_retry">Not sent. Tap to retry</string>
     <string name="send">Send</string>
+
+    <!-- Safety -->
+    <string name="report">Report</string>
+    <string name="report_title">Report %1$s</string>
+    <string name="report_message">Reports are private. The room owner never sees who reported. Choose what fits best.</string>
+    <string name="report_details_hint">Details (optional)</string>
+    <string name="report_send">Send report</string>
+    <string name="block_user">Block user</string>
+    <string name="block_title">Block %1$s?</string>
+    <string name="block_message">Their messages will be hidden on this device. They are not told, and you can unblock them any time. Blocking does not stop them from seeing your messages.</string>
+    <string name="block_confirm">Block</string>
+    <string name="unblock">Unblock</string>
+    <string name="blocked_message">Message from a blocked user. Tap to show.</string>
+    <string name="remove_member">Remove and ban</string>
+    <string name="remove_member_title">Remove %1$s?</string>
+    <string name="remove_member_message">They are removed from the room and cannot rejoin with the room code unless you unban them.</string>
+    <string name="remove_member_confirm">Remove</string>
+    <string name="banned_members">Banned (%1$d)</string>
+    <string name="unban">Unban</string>
+    <string name="room_removed_title">Removed from room</string>
+    <string name="room_removed_message">The owner removed you from this room.</string>
 </resources>

@@ -1,12 +1,15 @@
 package com.example.wishpchatroom.viewmodel
 
 import com.example.wishpchatroom.MainDispatcherRule
+import com.example.wishpchatroom.data.Ban
 import com.example.wishpchatroom.data.Message
 import com.example.wishpchatroom.data.Presence
 import com.example.wishpchatroom.data.ReplyRef
+import com.example.wishpchatroom.data.ReportCategory
 import com.example.wishpchatroom.data.Resource
 import com.example.wishpchatroom.data.Room
 import com.example.wishpchatroom.testing.FakeChatRepository
+import com.example.wishpchatroom.testing.FakeModerationRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
@@ -24,6 +27,7 @@ class ChatViewModelTest {
     val mainRule = MainDispatcherRule()
 
     private val code = "ABC123"
+    private val moderation = FakeModerationRepository()
 
     private fun room(open: Boolean = true) = Room(
         roomCode = code,
@@ -37,7 +41,7 @@ class ChatViewModelTest {
 
     private fun loadedVm(repo: FakeChatRepository = FakeChatRepository()): Pair<ChatViewModel, FakeChatRepository> {
         repo.room.value = room()
-        val vm = ChatViewModel(repo)
+        val vm = ChatViewModel(repo, moderation)
         vm.loadRoom(code)
         vm.loadMessages(code)
         return vm to repo
@@ -99,7 +103,7 @@ class ChatViewModelTest {
     @Test
     fun `sending before the username is known is rejected`() {
         val repo = FakeChatRepository()
-        val vm = ChatViewModel(repo)
+        val vm = ChatViewModel(repo, moderation)
         assertFalse(vm.sendMessage(code, "hello"))
         assertNotNull(vm.uiState.value.errorMessage)
         assertTrue(repo.sent.isEmpty())
@@ -288,5 +292,85 @@ class ChatViewModelTest {
         repo.presenceWrites.clear()
         vm.updateUserPresence(code, true)
         assertTrue(repo.presenceWrites.isEmpty())
+    }
+
+    // --- safety: block, report, kick ---
+
+    @Test
+    fun `blocking a user updates the blocked set and confirms`() {
+        val (vm, _) = loadedVm()
+        vm.blockUser("u2")
+        assertEquals(setOf("u2"), vm.uiState.value.blockedUids)
+        assertNotNull(vm.uiState.value.infoMessage)
+        vm.unblockUser("u2")
+        assertTrue(vm.uiState.value.blockedUids.isEmpty())
+    }
+
+    @Test
+    fun `a failed block shows the error and blocks nobody`() {
+        val (vm, _) = loadedVm()
+        moderation.blockResult = Resource.Error("No connection")
+        vm.blockUser("u2")
+        assertEquals("No connection", vm.uiState.value.errorMessage)
+        assertTrue(vm.uiState.value.blockedUids.isEmpty())
+    }
+
+    @Test
+    fun `reporting a message sends its author category and a text snapshot`() {
+        val (vm, _) = loadedVm()
+        vm.reportMessage(code, message("m1", "rude words"), ReportCategory.HARASSMENT, "bad")
+        assertEquals(listOf(code, "u2", "m1", "rude words", ReportCategory.HARASSMENT, "bad"), moderation.reports.single())
+        assertEquals("Report sent. Thank you.", vm.uiState.value.infoMessage)
+        vm.clearInfo()
+        assertNull(vm.uiState.value.infoMessage)
+    }
+
+    @Test
+    fun `the owner can remove and ban another member but not themselves`() {
+        val (vm, _) = loadedVm()
+        val bob = vm.uiState.value.members.first { it.uid == "u2" }
+        val me = vm.uiState.value.members.first { it.isYou }
+        vm.removeAndBan(code, me)
+        assertTrue(moderation.removed.isEmpty())
+        vm.removeAndBan(code, bob)
+        assertEquals("u2" to "bob", moderation.removed.single())
+    }
+
+    @Test
+    fun `a non-owner cannot remove anyone`() {
+        val repo = FakeChatRepository().apply {
+            currentUid = "u2"
+            room.value = room()
+        }
+        val vm = ChatViewModel(repo, moderation)
+        vm.loadRoom(code)
+        val cy = vm.uiState.value.members.first { it.uid == "u3" }
+        vm.removeAndBan(code, cy)
+        assertTrue(moderation.removed.isEmpty())
+    }
+
+    @Test
+    fun `the owner sees the ban list while watching and can unban`() {
+        val (vm, _) = loadedVm()
+        moderation.bans.value = listOf(Ban("u9", "zed"))
+        vm.startWatchingBans(code)
+        assertEquals(listOf(Ban("u9", "zed")), vm.uiState.value.bans)
+        vm.unban(code, Ban("u9", "zed"))
+        assertEquals(listOf("u9"), moderation.unbanned)
+        vm.stopWatchingBans()
+        assertTrue(vm.uiState.value.bans.isEmpty())
+    }
+
+    @Test
+    fun `being removed from the members map shows the removed state`() {
+        val repo = FakeChatRepository().apply {
+            currentUid = "u2"
+            room.value = room()
+        }
+        val vm = ChatViewModel(repo, moderation)
+        vm.loadRoom(code)
+        assertEquals(RoomStatus.OPEN, vm.uiState.value.roomStatus)
+        repo.room.value = room().copy(members = mapOf("me" to "ada", "u3" to "cy"))
+        assertEquals(RoomStatus.REMOVED, vm.uiState.value.roomStatus)
     }
 }

@@ -23,6 +23,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.wishpchatroom.data.Ban
 import com.example.wishpchatroom.viewmodel.Member
 
 private val OnlineColor = Color(0xFF2E7D32)
@@ -91,14 +92,38 @@ fun MembersDialog(
     members: List<Member>,
     isOwner: Boolean,
     onLeave: () -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    bans: List<Ban> = emptyList(),
+    onRemove: (Member) -> Unit = {},
+    onUnban: (Ban) -> Unit = {}
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.members_title, members.size)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                members.forEach { member -> MemberRow(member) }
+                members.forEach { member ->
+                    MemberRow(member, onRemove = if (isOwner && !member.isYou) ({ onRemove(member) }) else null)
+                }
+                if (bans.isNotEmpty()) {
+                    Text(
+                        text = stringResource(R.string.banned_members, bans.size),
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                    bans.forEach { ban ->
+                        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = ban.username,
+                                modifier = Modifier.weight(1f),
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            TextButton(onClick = { onUnban(ban) }) { Text(stringResource(R.string.unban)) }
+                        }
+                    }
+                }
             }
         },
         confirmButton = {
@@ -120,7 +145,7 @@ fun MembersDialog(
 }
 
 @Composable
-private fun MemberRow(member: Member) {
+private fun MemberRow(member: Member, onRemove: (() -> Unit)? = null) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
@@ -156,6 +181,11 @@ private fun MemberRow(member: Member) {
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.padding(start = 8.dp)
             )
+        }
+        if (onRemove != null) {
+            TextButton(onClick = onRemove) {
+                Text(stringResource(R.string.remove_member), color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+            }
         }
     }
 }

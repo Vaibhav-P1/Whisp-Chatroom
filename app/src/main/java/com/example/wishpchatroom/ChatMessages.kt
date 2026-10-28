@@ -42,6 +42,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -68,7 +70,8 @@ fun MessageList(
     onRetry: (messageId: String) -> Unit,
     onMessageActions: (Message) -> Unit,
     onToggleReaction: (messageId: String, emoji: String) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    blockedUids: Set<String> = emptySet()
 ) {
     val listState = rememberLazyListState()
 
@@ -112,6 +115,7 @@ fun MessageList(
             MessageCard(
                 message = message,
                 currentUid = currentUid,
+                isBlocked = message.uid in blockedUids,
                 onRetry = { onRetry(message.id) },
                 onLongClick = { onMessageActions(message) },
                 onToggleReaction = { emoji -> onToggleReaction(message.id, emoji) }
@@ -129,8 +133,23 @@ fun MessageCard(
     currentUid: String?,
     onRetry: () -> Unit,
     onLongClick: () -> Unit,
-    onToggleReaction: (emoji: String) -> Unit
+    onToggleReaction: (emoji: String) -> Unit,
+    isBlocked: Boolean = false
 ) {
+    // A blocked user's message stays collapsed until tapped; this is per message and not remembered.
+    var revealed by remember { mutableStateOf(false) }
+    if (isBlocked && !revealed && message.uid != currentUid) {
+        Text(
+            text = stringResource(R.string.blocked_message),
+            fontSize = 12.sp,
+            fontStyle = FontStyle.Italic,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+            modifier = Modifier
+                .padding(horizontal = 16.dp, vertical = 4.dp)
+                .clickable { revealed = true }
+        )
+        return
+    }
     val timeFormat = remember { SimpleDateFormat("HH:mm", Locale.getDefault()) }
     val isCurrentUser = message.uid == currentUid
     val isFailed = message.status == MessageStatus.FAILED
@@ -322,7 +341,9 @@ fun MessageActionsDialog(
     onCopy: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onReport: () -> Unit = {},
+    onBlock: () -> Unit = {}
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -346,6 +367,10 @@ fun MessageActionsDialog(
                 if (isMine && isRoomOpen) ActionButton(stringResource(R.string.edit_message), onEdit)
                 if (isMine || isRoomOwner) {
                     ActionButton(stringResource(R.string.delete_message), onDelete, isDestructive = true)
+                }
+                if (!isMine) {
+                    ActionButton(stringResource(R.string.report), onReport)
+                    ActionButton(stringResource(R.string.block_user), onBlock, isDestructive = true)
                 }
             }
         },
