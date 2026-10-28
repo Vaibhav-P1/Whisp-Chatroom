@@ -15,6 +15,22 @@ service cloud.firestore {
       return signedIn() && request.auth.uid in room(roomCode).members;
     }
 
+    function isCodeRoom(data) {
+      return data.get('type', 'code') == 'code';
+    }
+
+    function isLocked(roomCode) {
+      return room(roomCode).get('locked', false) == true;
+    }
+
+    // True when I am friends with the other member of this DM after the current batch.
+    function dmFriendsAfter(members) {
+      return (members.keys()[0] == request.auth.uid
+          && existsAfter(/databases/$(database)/documents/users/$(request.auth.uid)/friends/$(members.keys()[1])))
+        || (members.keys()[1] == request.auth.uid
+          && existsAfter(/databases/$(database)/documents/users/$(request.auth.uid)/friends/$(members.keys()[0])));
+    }
+
     function isOwner(roomCode) {
       return signedIn() && room(roomCode).creatorUid == request.auth.uid;
     }
@@ -32,16 +48,78 @@ service cloud.firestore {
         && reply.text is string && reply.text.size() <= 200;
     }
 
+    function handlesDoc(handle) {
+      return /databases/$(database)/documents/handles/$(handle);
+    }
+
+    function validHandle(handle) {
+      return handle is string
+        && handle.matches('[a-z][a-z0-9_]{3,19}')
+        && !handle.matches('.*_')
+        && !(handle in ['admin', 'support', 'wishp', 'whisp', 'moderator', 'system', 'null',
+                        'undefined', 'root', 'official', 'help', 'api']);
+    }
+
     // User profiles: only the owner can read or write their own profile.
     match /users/{uid} {
       allow read: if signedIn() && request.auth.uid == uid;
-      allow create, update: if signedIn() && request.auth.uid == uid
+      allow create: if signedIn() && request.auth.uid == uid
         && request.resource.data.keys().hasOnly(['firstName', 'lastName', 'email'])
         && validName(request.resource.data.firstName)
         && validName(request.resource.data.lastName)
         && request.resource.data.email is string;
+      // The handle can only be set or changed together with its handles/{handle} document (same
+      // batch), at most once per 30 days, and the previous handle must be released in that batch.
+      allow update: if signedIn() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['firstName', 'lastName', 'email', 'handle', 'handleChangedAt'])
+        && validName(request.resource.data.firstName)
+        && validName(request.resource.data.lastName)
+        && request.resource.data.email is string
+        && (!('handle' in request.resource.data)
+            || (request.resource.data.get('handle', null) == resource.data.get('handle', null)
+                && request.resource.data.get('handleChangedAt', null) == resource.data.get('handleChangedAt', null))
+            || (validHandle(request.resource.data.handle)
+                && getAfter(handlesDoc(request.resource.data.handle)).data.uid == uid
+                && request.resource.data.handleChangedAt == request.time
+                && (!('handleChangedAt' in resource.data)
+                    || request.time > resource.data.handleChangedAt + duration.value(30, 'd'))
+                && (!('handle' in resource.data) || !existsAfter(handlesDoc(resource.data.handle)))));
       // Account deletion: the owner removes their own profile.
       allow delete: if signedIn() && request.auth.uid == uid;
+
+      // Friends: written in pairs by the accepting batch while the request still exists (and is
+      // deleted by that same batch). Either side may remove the friendship.
+      match /friends/{friendUid} {
+        allow read: if signedIn() && request.auth.uid == uid;
+        allow create: if signedIn()
+          && request.resource.data.keys().hasOnly(['since', 'handle'])
+          && request.resource.data.since == request.time
+          && request.resource.data.handle is string
+          && friendUid != uid
+          && (
+            // my own doc: the request came from the friend to me
+            (request.auth.uid == uid
+              && exists(/databases/$(database)/documents/friendRequests/$(friendUid + '_' + uid))
+              && !existsAfter(/databases/$(database)/documents/friendRequests/$(friendUid + '_' + uid)))
+            ||
+            // the requester's doc, written by the accepter
+            (request.auth.uid == friendUid
+              && exists(/databases/$(database)/documents/friendRequests/$(uid + '_' + friendUid))
+              && !existsAfter(/databases/$(database)/documents/friendRequests/$(uid + '_' + friendUid)))
+          );
+        allow update: if false;
+        allow delete: if signedIn() && (request.auth.uid == uid || request.auth.uid == friendUid);
+      }
+
+      // Per-conversation preferences (pin, mute, archive, read marker): private to the owner.
+      match /chats/{chatId} {
+        allow read, delete: if signedIn() && request.auth.uid == uid;
+        allow create, update: if signedIn() && request.auth.uid == uid
+          && request.resource.data.keys().hasOnly(['pinned', 'muted', 'archived', 'archivedAt', 'lastReadAt'])
+          && request.resource.data.get('pinned', false) is bool
+          && request.resource.data.get('muted', false) is bool
+          && request.resource.data.get('archived', false) is bool;
+      }
 
       // Block list: private to the owner. A block is just "this uid is hidden from me".
       match /blocks/{blockedUid} {
@@ -79,10 +157,81 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
-    match /rooms/{roomCode} {
-      // The room code is the secret: rooms can be fetched by code but never listed.
+    // Handles: unique public names. Read by exact id only (get), never listed, so they cannot be
+    // enumerated. Created together with the owner's users/{uid}.handle.
+    match /handles/{handle} {
       allow get: if signedIn();
       allow list: if false;
+      allow create: if signedIn()
+        && validHandle(handle)
+        && request.resource.data.keys().hasOnly(['uid', 'displayName', 'createdAt'])
+        && request.resource.data.uid == request.auth.uid
+        && validName(request.resource.data.displayName)
+        && request.resource.data.createdAt == request.time
+        && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.handle == handle;
+      allow update: if false;
+      allow delete: if signedIn() && resource.data.uid == request.auth.uid;
+    }
+
+    // Friend requests are keyed "fromUid_toUid". Only the two people involved can see or remove one.
+    match /friendRequests/{requestId} {
+      allow read: if signedIn()
+        && (resource.data.from == request.auth.uid || resource.data.to == request.auth.uid);
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['from', 'to', 'fromHandle', 'fromName', 'createdAt'])
+        && request.resource.data.from == request.auth.uid
+        && request.resource.data.to is string
+        && request.resource.data.to != request.auth.uid
+        && requestId == request.auth.uid + '_' + request.resource.data.to
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.fromHandle == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.handle
+        && validName(request.resource.data.fromName)
+        // Not when they already asked us, are already friends, or blocked us.
+        && !exists(/databases/$(database)/documents/friendRequests/$(request.resource.data.to + '_' + request.auth.uid))
+        && !exists(/databases/$(database)/documents/users/$(request.auth.uid)/friends/$(request.resource.data.to))
+        && !exists(/databases/$(database)/documents/users/$(request.resource.data.to)/blocks/$(request.auth.uid));
+      allow update: if false;
+      allow delete: if signedIn()
+        && (resource.data.from == request.auth.uid || resource.data.to == request.auth.uid);
+    }
+
+    match /rooms/{roomCode} {
+      // The room code is the secret: rooms can be fetched by code but never listed.
+      allow get: if signedIn() && (isCodeRoom(resource.data) || request.auth.uid in resource.data.members);
+      allow list: if false;
+
+      // A direct message: a deterministic two-member room between two friends, created in the batch
+      // that accepts the friend request (the friend docs exist after the batch).
+      allow create: if signedIn()
+        && roomCode.matches('dm_[^_]+_[^_]+')
+        && request.resource.data.keys().hasOnly(
+             ['roomCode', 'creatorUid', 'roomOpen', 'members', 'temporary', 'timestamp', 'type', 'locked'])
+        && request.resource.data.type == 'dm'
+        && request.resource.data.roomCode == roomCode
+        && request.resource.data.creatorUid == request.auth.uid
+        && request.resource.data.roomOpen == true
+        && request.resource.data.temporary == false
+        && request.resource.data.locked == false
+        && request.resource.data.timestamp == request.time
+        && request.resource.data.members.size() == 2
+        && request.auth.uid in request.resource.data.members
+        // The id is dm_{smaller uid}_{larger uid}, so there is exactly one DM per pair.
+        && (
+          (request.resource.data.members.keys()[0] < request.resource.data.members.keys()[1]
+            && roomCode == 'dm_' + request.resource.data.members.keys()[0] + '_' + request.resource.data.members.keys()[1])
+          ||
+          (request.resource.data.members.keys()[1] < request.resource.data.members.keys()[0]
+            && roomCode == 'dm_' + request.resource.data.members.keys()[1] + '_' + request.resource.data.members.keys()[0])
+        )
+        // The two are friends once the batch is applied.
+        && (
+          (request.resource.data.members.keys()[0] == request.auth.uid
+            && existsAfter(/databases/$(database)/documents/users/$(request.auth.uid)/friends/$(request.resource.data.members.keys()[1])))
+          ||
+          (request.resource.data.members.keys()[1] == request.auth.uid
+            && existsAfter(/databases/$(database)/documents/users/$(request.auth.uid)/friends/$(request.resource.data.members.keys()[0])))
+        )
+        && validName(request.resource.data.members[request.auth.uid]);
 
       allow create: if signedIn()
         && request.resource.data.keys().hasOnly(
@@ -98,11 +247,13 @@ service cloud.firestore {
 
       allow update: if signedIn() && (
         // Owner closes the room.
-        (resource.data.creatorUid == request.auth.uid
+        (isCodeRoom(resource.data)
+          && resource.data.creatorUid == request.auth.uid
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['roomOpen']))
         ||
         // Any signed-in user joins an open room by adding only their own uid.
-        (resource.data.roomOpen == true
+        (isCodeRoom(resource.data)
+          && resource.data.roomOpen == true
           && !exists(/databases/$(database)/documents/rooms/$(roomCode)/bans/$(request.auth.uid))
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members'])
           && request.resource.data.members.diff(resource.data.members).affectedKeys().hasOnly([request.auth.uid])
@@ -113,27 +264,55 @@ service cloud.firestore {
         ||
         // The owner removes exactly one other member (kick). The client also writes a ban doc and a
         // modlog entry in the same batch.
-        (resource.data.creatorUid == request.auth.uid
+        (isCodeRoom(resource.data)
+          && resource.data.creatorUid == request.auth.uid
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members'])
           && request.resource.data.members.diff(resource.data.members).affectedKeys().size() == 1
           && request.resource.data.members.diff(resource.data.members).removedKeys().size() == 1
           && !(resource.data.creatorUid in request.resource.data.members.diff(resource.data.members).removedKeys()))
         ||
         // A member (not the owner) leaves by removing only their own uid.
-        (resource.data.creatorUid != request.auth.uid
+        (isCodeRoom(resource.data)
+          && resource.data.creatorUid != request.auth.uid
           && request.auth.uid in resource.data.members
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members'])
           && !(request.auth.uid in request.resource.data.members)
           && request.resource.data.members.diff(resource.data.members).affectedKeys().hasOnly([request.auth.uid]))
+        ||
+        // DM: either person locks the conversation (block or unfriend). Only the locker unlocks it,
+        // or a fresh friendship does, so the other side cannot tell a block from an unfriend.
+        (resource.data.get('type', 'code') == 'dm'
+          && request.auth.uid in resource.data.members
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['locked', 'lockedBy'])
+          && (
+            (request.resource.data.locked == true && request.resource.data.lockedBy == request.auth.uid)
+            ||
+            (request.resource.data.locked == false
+              && request.resource.data.lockedBy == ''
+              && (resource.data.get('lockedBy', '') == request.auth.uid || dmFriendsAfter(resource.data.members)))
+          ))
+        ||
+        // The sender refreshes the conversation preview in the same batch as their message.
+        (request.auth.uid in resource.data.members
+          && resource.data.roomOpen == true
+          && resource.data.get('locked', false) != true
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastMessage', 'lastMessageAt'])
+          && request.resource.data.lastMessageAt == request.time
+          && request.resource.data.lastMessage.keys().hasOnly(['text', 'uid', 'at'])
+          && request.resource.data.lastMessage.text is string
+          && request.resource.data.lastMessage.text.size() <= 100
+          && request.resource.data.lastMessage.uid == request.auth.uid
+          && request.resource.data.lastMessage.at == request.time)
       );
 
-      allow delete: if signedIn() && resource.data.creatorUid == request.auth.uid;
+      allow delete: if signedIn() && isCodeRoom(resource.data) && resource.data.creatorUid == request.auth.uid;
 
       match /messages/{messageId} {
         allow read: if isMember(roomCode);
 
         allow create: if isMember(roomCode)
           && room(roomCode).roomOpen == true
+          && !isLocked(roomCode)
           && request.resource.data.keys().hasOnly(['uid', 'username', 'messageText', 'timestamp', 'replyTo'])
           && request.resource.data.uid == request.auth.uid
           && request.resource.data.username == room(roomCode).members[request.auth.uid]
