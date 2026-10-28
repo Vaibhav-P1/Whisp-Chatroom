@@ -12,7 +12,9 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.tasks.await
 import java.util.Date
 import javax.inject.Inject
@@ -276,34 +278,59 @@ class FirestoreContactsRepository @Inject constructor(
 
     override fun observeInbox(): Flow<List<InboxItem>> {
         val me = currentUid ?: return flowOf(emptyList())
-        return observeFriends().flatMapLatest { allFriends ->
-            // One document listener per conversation, only while the inbox is collected. Rooms cannot
-            // be listed by rules, so whereIn queries are not possible.
-            val friends = allFriends.take(MAX_INBOX)
-            val rooms: Flow<List<Pair<Friend, Room?>>> =
-                if (friends.isEmpty()) {
+        val friendsAndPrefs = combine(observeFriends(), observePrefs()) { friends, prefs -> friends to prefs }
+            // Every friend gets a private marker document, so the conversation stays listed (locked, with
+            // its history) after the friendship ends. Only missing markers are written.
+            .onEach { (friends, prefs) ->
+                friends.forEach { friend ->
+                    val id = dmRoomId(me, friend.uid)
+                    if (id !in prefs) ensureChatMarker(me, id)
+                }
+            }
+
+        return friendsAndPrefs
+            .map { (friends, prefs) ->
+                // The conversations: current friends plus every DM this user already has a marker for.
+                val ids = (friends.map { dmRoomId(me, it.uid) } + prefs.keys.filter { isDmRoom(it) })
+                    .distinct().take(MAX_INBOX)
+                Triple(ids, friends.associateBy { dmRoomId(me, it.uid) }, prefs)
+            }
+            .distinctUntilChangedBy { it.first }
+            .flatMapLatest { (ids, friendById, _) ->
+                // One document listener per conversation, only while the inbox is collected. Rooms cannot
+                // be listed by rules, so whereIn queries are not possible.
+                if (ids.isEmpty()) {
                     flowOf(emptyList())
                 } else {
-                    combine(friends.map { friend ->
-                        observeRoom(dmRoomId(me, friend.uid)).map { friend to it }
-                    }) { it.toList() }
+                    val rooms: Flow<List<Pair<String, Room?>>> =
+                        combine(ids.map { id -> observeRoom(id).map { room -> id to room } }) { it.toList() }
+                    combine(rooms, observePrefs()) { pairs, prefs ->
+                        sortInbox(pairs.map { (id, room) -> toInboxItem(me, id, friendById[id], room, prefs[id]) })
+                    }
                 }
-            combine(rooms, observePrefs()) { pairs, prefs ->
-                sortInbox(pairs.map { (friend, room) -> toInboxItem(me, friend, room, prefs[dmRoomId(me, friend.uid)]) })
             }
+    }
+
+    private suspend fun ensureChatMarker(me: String, roomCode: String) {
+        try {
+            val ref = prefsDoc(me, roomCode)
+            if (!ref.get().await().exists()) ref.set(mapOf("pinned" to false)).await()
+        } catch (e: Exception) {
+            // Best effort: without it the conversation is only listed while the friendship lasts.
         }
     }
 
-    private fun toInboxItem(me: String, friend: Friend, room: Room?, prefs: ChatPrefs?): InboxItem {
-        val roomCode = dmRoomId(me, friend.uid)
+    private fun toInboxItem(me: String, roomCode: String, friend: Friend?, room: Room?, prefs: ChatPrefs?): InboxItem {
+        // dm_{a}_{b}: the other person is whichever uid is not mine (needed once the friendship is gone).
+        val otherUid = roomCode.removePrefix("dm_").split("_").firstOrNull { it != me }.orEmpty()
         val last = room?.lastMessage
         val lastAt = room?.lastMessageAt?.time
         val readAt = prefs?.lastReadAt ?: 0L
         return InboxItem(
             roomCode = roomCode,
-            friendUid = friend.uid,
-            friendName = room?.members?.get(friend.uid) ?: friend.handle,
-            friendHandle = friend.handle,
+            friendUid = otherUid,
+            friendName = room?.members?.get(otherUid) ?: friend?.handle ?: "Former friend",
+            friendHandle = friend?.handle.orEmpty(),
             lastText = last?.text,
             lastSenderUid = last?.uid,
             lastAt = lastAt,
@@ -312,7 +339,8 @@ class FirestoreContactsRepository @Inject constructor(
             muted = prefs?.muted ?: false,
             // An archived conversation comes back when a newer message arrives.
             archived = (prefs?.archived ?: false) && !(lastAt != null && lastAt > (prefs?.archivedAt ?: 0L)),
-            locked = room?.locked ?: false
+            // Without a friendship nothing can be sent, even before the DM document says so.
+            locked = (room?.locked ?: false) || friend == null
         )
     }
 
