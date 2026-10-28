@@ -2,6 +2,7 @@ package com.example.wishpchatroom.di
 
 import com.example.wishpchatroom.data.ChatRepository
 import com.example.wishpchatroom.data.ContactsRepository
+import com.example.wishpchatroom.data.DeviceServerClock
 import com.example.wishpchatroom.data.FirestoreContactsRepository
 import com.example.wishpchatroom.data.FirestoreMissionRepository
 import com.example.wishpchatroom.data.FirestoreModerationRepository
@@ -11,6 +12,7 @@ import com.example.wishpchatroom.data.MissionRepository
 import com.example.wishpchatroom.data.ModerationRepository
 import com.example.wishpchatroom.data.OfflineFirstChatRepository
 import com.example.wishpchatroom.data.RoomRepository
+import com.example.wishpchatroom.data.ServerClock
 import com.example.wishpchatroom.data.UserRepository
 import com.example.wishpchatroom.data.remote.ChatRemoteDataSource
 import com.example.wishpchatroom.data.remote.FirestoreChatRemoteDataSource
@@ -39,6 +41,10 @@ abstract class RepositoryModule {
     @Binds
     @Singleton
     abstract fun bindContactsRepository(impl: FirestoreContactsRepository): ContactsRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindServerClock(impl: DeviceServerClock): ServerClock
 
     @Binds
     @Singleton

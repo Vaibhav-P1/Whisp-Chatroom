@@ -80,13 +80,19 @@ fun ChatScreen(
 
     // A mission room counts down: tick once a second while it has an expiry, so the banner is live
     // and the input locks the moment the time is up. The server enforces the same moment in the rules.
-    var now by remember { mutableStateOf(System.currentTimeMillis()) }
-    LaunchedEffect(uiState.missionExpiresAt) {
-        while (uiState.missionExpiresAt != null) {
-            now = System.currentTimeMillis()
+    var now by remember { mutableStateOf(chatViewModel.serverNow()) }
+    // The clock also hides whispers the moment their timer ends, so it ticks in every chat that has
+    // a mission or a visible whisper.
+    val hasTimers = uiState.missionExpiresAt != null || uiState.messages.any { it.isWhisper }
+    LaunchedEffect(hasTimers) {
+        now = chatViewModel.serverNow()
+        while (hasTimers) {
             delay(1_000)
+            now = chatViewModel.serverNow()
         }
     }
+    var whisperTtl by remember { mutableStateOf<Long?>(null) }
+    val visibleMessages = remember(uiState.messages, now) { uiState.messages.filter { it.isVisibleAt(now) } }
     val missionPhase = phaseAt(uiState.missionExpiresAt, now)
     var showMission by remember { mutableStateOf(false) }
 
@@ -277,7 +283,7 @@ fun ChatScreen(
             )
             SearchResults(
                 query = uiState.searchQuery,
-                results = uiState.searchResults.filter { it.uid !in uiState.blockedUids },
+                results = uiState.searchResults.filter { it.uid !in uiState.blockedUids && it.isVisibleAt(now) },
                 currentUid = currentUid,
                 modifier = Modifier.weight(1f)
             )
@@ -330,7 +336,7 @@ fun ChatScreen(
             }
 
             MessageList(
-                messages = uiState.messages,
+                messages = visibleMessages,
                 currentUid = currentUid,
                 isLoadingOlder = uiState.isLoadingOlder,
                 onLoadOlder = { chatViewModel.loadOlderMessages(roomCode) },
@@ -338,7 +344,9 @@ fun ChatScreen(
                 onMessageActions = { actionsMessage = it },
                 onToggleReaction = { messageId, emoji -> chatViewModel.toggleReaction(roomCode, messageId, emoji) },
                 modifier = Modifier.weight(1f),
-                blockedUids = uiState.blockedUids
+                blockedUids = uiState.blockedUids,
+                now = now,
+                onReveal = { chatViewModel.revealWhisper(roomCode, it) }
             )
 
             uiState.infoMessage?.let { info ->
@@ -388,10 +396,13 @@ fun ChatScreen(
                     chatViewModel.clearError()
                 },
                 onSend = {
-                    if (messageText.isNotBlank() && chatViewModel.sendMessage(roomCode, messageText)) {
+                    if (messageText.isNotBlank() && chatViewModel.sendMessage(roomCode, messageText, whisperTtl)) {
                         messageText = ""
                     }
-                }
+                },
+                whisperTtl = whisperTtl,
+                // Editing a message is never a whisper; the selector is hidden meanwhile.
+                onWhisperTtlChange = if (uiState.editing == null) ({ whisperTtl = it }) else null
             )
         }
     }

@@ -5,6 +5,9 @@ import kotlinx.coroutines.flow.Flow
 interface ChatRepository {
     val currentUid: String?
 
+    /** The server's time as best known: use it for countdowns and for hiding expired whispers. */
+    fun serverNow(): Long
+
     /** The newest [limit] cached messages of a room, oldest first. Emits again whenever the cache changes. */
     fun observeMessages(roomCode: String, limit: Int): Flow<List<Message>>
 
@@ -25,8 +28,21 @@ interface ChatRepository {
         roomCode: String,
         messageText: String,
         username: String,
-        replyTo: ReplyRef? = null
+        replyTo: ReplyRef? = null,
+        whisperTtlSeconds: Long? = null
     ): Resource<Unit>
+
+    /**
+     * Opens a whisper, which starts its timer for everyone. Does nothing for the author's own
+     * whispers or ones that were already opened.
+     */
+    suspend fun revealWhisper(roomCode: String, messageId: String): Resource<Unit>
+
+    /**
+     * Removes whispers that are hidden by now from the cache, and asks the server to delete them
+     * too (best effort: the rules allow it but nothing guarantees it happens).
+     */
+    suspend fun purgeExpired(roomCode: String)
 
     /** Changes the text of one of the user's own messages and marks it as edited. */
     suspend fun editMessage(roomCode: String, messageId: String, newText: String): Resource<Unit>

@@ -5,6 +5,7 @@ import com.example.wishpchatroom.data.isDmRoom
 import com.example.wishpchatroom.data.Presence
 import com.example.wishpchatroom.data.ReplyRef
 import com.example.wishpchatroom.data.Resource
+import com.example.wishpchatroom.data.ServerClock
 import com.example.wishpchatroom.data.Room
 import com.example.wishpchatroom.data.toUserMessage
 import com.google.firebase.Timestamp
@@ -15,6 +16,7 @@ import com.google.firebase.firestore.FieldPath
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.MetadataChanges
+import com.google.firebase.firestore.Source
 import com.google.firebase.firestore.Query
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
@@ -27,7 +29,8 @@ import javax.inject.Singleton
 @Singleton
 class FirestoreChatRemoteDataSource @Inject constructor(
     private val firestore: FirebaseFirestore,
-    private val auth: FirebaseAuth
+    private val auth: FirebaseAuth,
+    private val clock: ServerClock
 ) : ChatRemoteDataSource {
     override val currentUid: String? get() = auth.currentUser?.uid
 
@@ -73,7 +76,8 @@ class FirestoreChatRemoteDataSource @Inject constructor(
         id: String,
         username: String,
         messageText: String,
-        replyTo: ReplyRef?
+        replyTo: ReplyRef?,
+        ttlSeconds: Long?
     ): Resource<Unit> {
         val uid = currentUid ?: return Resource.Error("You must be logged in")
         return try {
@@ -83,6 +87,7 @@ class FirestoreChatRemoteDataSource @Inject constructor(
                 "messageText" to messageText,
                 "timestamp" to FieldValue.serverTimestamp()
             )
+            if (ttlSeconds != null) data["ttlSeconds"] = ttlSeconds
             if (replyTo != null) {
                 data["replyTo"] = mapOf(
                     "id" to replyTo.messageId,
@@ -120,6 +125,26 @@ class FirestoreChatRemoteDataSource @Inject constructor(
             } else {
                 Resource.Error("Message not sent. The room may be closed.")
             }
+        }
+    }
+
+    override suspend fun revealWhisper(roomCode: String, messageId: String): Resource<Unit> =
+        try {
+            messagesRef(roomCode).document(messageId).update("firstViewedAt", FieldValue.serverTimestamp()).await()
+            Resource.Success(Unit)
+        } catch (e: Exception) {
+            // Someone else opened it first, or it is past its cap: the snapshot listener shows the truth.
+            Resource.Error(e.toUserMessage("Could not open the whisper."))
+        }
+
+    override suspend fun deleteMessages(roomCode: String, messageIds: List<String>) {
+        if (messageIds.isEmpty()) return
+        try {
+            val batch = firestore.batch()
+            messageIds.forEach { batch.delete(messagesRef(roomCode).document(it)) }
+            batch.commit().await()
+        } catch (e: Exception) {
+            // Best effort: the rules only allow this for hidden whispers, and nothing depends on it.
         }
     }
 
@@ -249,13 +274,20 @@ class FirestoreChatRemoteDataSource @Inject constructor(
     override suspend fun updateUserPresence(roomCode: String, username: String, isPresent: Boolean) {
         val uid = currentUid ?: return
         try {
-            roomRef(roomCode).collection(FirestoreCollections.PRESENCE).document(uid).set(
+            val presenceDoc = roomRef(roomCode).collection(FirestoreCollections.PRESENCE).document(uid)
+            val before = System.currentTimeMillis()
+            presenceDoc.set(
                 mapOf(
                     "username" to username,
                     "isPresent" to isPresent,
                     "lastSeen" to FieldValue.serverTimestamp()
                 )
             ).await()
+            // The heartbeat doubles as a clock probe: read the server-stamped time back (a rare read).
+            if (clock.needsCalibration()) {
+                val seen = presenceDoc.get(Source.SERVER).await().getTimestamp("lastSeen")?.toDate()?.time
+                if (seen != null) clock.calibrate(seen, before, System.currentTimeMillis())
+            }
         } catch (e: Exception) {
             // Presence is best effort and must never break the chat.
         }
@@ -294,7 +326,10 @@ class FirestoreChatRemoteDataSource @Inject constructor(
             replyTo = readReply(),
             edited = getBoolean("edited") ?: false,
             deleted = getBoolean("deleted") ?: false,
-            reactions = readReactions()
+            reactions = readReactions(),
+            ttlSeconds = getLong("ttlSeconds"),
+            firstViewedAt = getTimestamp("firstViewedAt", DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+                ?.toDate()?.time
         )
     }
 

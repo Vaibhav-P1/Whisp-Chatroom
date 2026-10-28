@@ -39,6 +39,8 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -55,6 +57,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.wishpchatroom.data.Message
 import com.example.wishpchatroom.data.MessageStatus
+import com.example.wishpchatroom.data.formatRemaining
+import com.example.wishpchatroom.data.WhisperLifetimes
 import com.example.wishpchatroom.data.ReplyRef
 import com.example.wishpchatroom.data.SupportedReactions
 import java.text.SimpleDateFormat
@@ -71,7 +75,9 @@ fun MessageList(
     onMessageActions: (Message) -> Unit,
     onToggleReaction: (messageId: String, emoji: String) -> Unit,
     modifier: Modifier = Modifier,
-    blockedUids: Set<String> = emptySet()
+    blockedUids: Set<String> = emptySet(),
+    now: Long = 0L,
+    onReveal: (Message) -> Unit = {}
 ) {
     val listState = rememberLazyListState()
 
@@ -116,6 +122,8 @@ fun MessageList(
                 message = message,
                 currentUid = currentUid,
                 isBlocked = message.uid in blockedUids,
+                now = now,
+                onReveal = { onReveal(message) },
                 onRetry = { onRetry(message.id) },
                 onLongClick = { onMessageActions(message) },
                 onToggleReaction = { emoji -> onToggleReaction(message.id, emoji) }
@@ -134,7 +142,9 @@ fun MessageCard(
     onRetry: () -> Unit,
     onLongClick: () -> Unit,
     onToggleReaction: (emoji: String) -> Unit,
-    isBlocked: Boolean = false
+    isBlocked: Boolean = false,
+    now: Long = 0L,
+    onReveal: () -> Unit = {}
 ) {
     // A blocked user's message stays collapsed until tapped; this is per message and not remembered.
     var revealed by remember { mutableStateOf(false) }
@@ -207,7 +217,16 @@ fun MessageCard(
                     Spacer(modifier = Modifier.height(6.dp))
                 }
 
-                if (message.deleted) {
+                val sealed = message.isSealedFor(currentUid)
+                if (sealed && !message.deleted) {
+                    Text(
+                        text = stringResource(R.string.whisper_sealed, whisperLifetimeLabel(message.ttlSeconds)),
+                        fontSize = 14.sp,
+                        fontStyle = FontStyle.Italic,
+                        color = contentColor,
+                        modifier = Modifier.clickable(onClick = onReveal)
+                    )
+                } else if (message.deleted) {
                     Text(
                         text = stringResource(R.string.message_deleted),
                         fontSize = 14.sp,
@@ -219,6 +238,20 @@ fun MessageCard(
                         text = message.messageText,
                         fontSize = 14.sp,
                         color = contentColor
+                    )
+                }
+
+                if (message.isWhisper && !message.deleted) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = when {
+                            message.firstViewedAt != null && message.hideAt != null ->
+                                stringResource(R.string.whisper_countdown, formatRemaining(message.hideAt!! - now))
+                            else -> stringResource(R.string.whisper_waiting, whisperLifetimeLabel(message.ttlSeconds))
+                        },
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = contentColor.copy(alpha = 0.85f)
                     )
                 }
 
@@ -346,6 +379,8 @@ fun MessageActionsDialog(
     onBlock: () -> Unit = {},
     onSaveNote: () -> Unit = {}
 ) {
+    // Whispers cannot be quoted, edited, copied or saved from the app (a deterrent, not a guarantee).
+    val isWhisper = message.isWhisper
     AlertDialog(
         onDismissRequest = onDismiss,
         title = null,
@@ -363,10 +398,12 @@ fun MessageActionsDialog(
                         }
                     }
                 }
-                if (isRoomOpen) ActionButton(stringResource(R.string.reply), onReply)
-                ActionButton(stringResource(R.string.copy_text), onCopy)
-                ActionButton(stringResource(R.string.mission_save_note), onSaveNote)
-                if (isMine && isRoomOpen) ActionButton(stringResource(R.string.edit_message), onEdit)
+                if (isRoomOpen && !isWhisper) ActionButton(stringResource(R.string.reply), onReply)
+                if (!isWhisper) {
+                    ActionButton(stringResource(R.string.copy_text), onCopy)
+                    ActionButton(stringResource(R.string.mission_save_note), onSaveNote)
+                }
+                if (isMine && isRoomOpen && !isWhisper) ActionButton(stringResource(R.string.edit_message), onEdit)
                 if (isMine || isRoomOwner) {
                     ActionButton(stringResource(R.string.delete_message), onDelete, isDestructive = true)
                 }
@@ -463,12 +500,16 @@ fun ComposerBanner(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MessageInput(
     text: String,
     enabled: Boolean,
     onTextChange: (String) -> Unit,
-    onSend: () -> Unit
+    onSend: () -> Unit,
+    // Seconds a whisper lasts after it is opened, or null for a normal message.
+    whisperTtl: Long? = null,
+    onWhisperTtlChange: ((Long?) -> Unit)? = null
 ) {
     Card(
         modifier = Modifier
@@ -476,6 +517,36 @@ fun MessageInput(
             .padding(8.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
     ) {
+        if (onWhisperTtlChange != null && enabled) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 12.dp, end = 12.dp, top = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                FilterChip(
+                    selected = whisperTtl == null,
+                    onClick = { onWhisperTtlChange(null) },
+                    label = { Text(stringResource(R.string.whisper_off), fontSize = 12.sp) }
+                )
+                WhisperLifetimes.forEach { (seconds, label) ->
+                    FilterChip(
+                        selected = whisperTtl == seconds,
+                        onClick = { onWhisperTtlChange(seconds) },
+                        label = { Text("🔒 " + label, fontSize = 12.sp) }
+                    )
+                }
+            }
+            if (whisperTtl != null) {
+                Text(
+                    text = stringResource(R.string.whisper_hint),
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+                )
+            }
+        }
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -507,3 +578,6 @@ fun MessageInput(
         }
     }
 }
+
+private fun whisperLifetimeLabel(ttlSeconds: Long?): String =
+    WhisperLifetimes.firstOrNull { it.first == ttlSeconds }?.second ?: "a short while"

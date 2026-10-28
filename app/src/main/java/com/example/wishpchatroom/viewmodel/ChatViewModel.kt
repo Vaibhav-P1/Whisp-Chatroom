@@ -100,6 +100,7 @@ class ChatViewModel @Inject constructor(
     private var heartbeatJob: Job? = null
     private var searchJob: Job? = null
     private var blocksJob: Job? = null
+    private var cleanupJob: Job? = null
     private var bansJob: Job? = null
     private var isLeaving = false
 
@@ -197,6 +198,14 @@ class ChatViewModel @Inject constructor(
                 .catch { e -> showError(e.toUserMessage("Could not load messages.")) }
                 .collect { messages -> _uiState.update { it.copy(messages = messages) } }
         }
+        // Hidden whispers are removed from the cache straight away and from the server as a best effort.
+        cleanupJob?.cancel()
+        cleanupJob = viewModelScope.launch {
+            while (true) {
+                chatRepository.purgeExpired(roomCode)
+                delay(CLEANUP_INTERVAL_MS)
+            }
+        }
         syncJob = viewModelScope.launch {
             try {
                 chatRepository.syncMessages(roomCode)
@@ -249,7 +258,7 @@ class ChatViewModel @Inject constructor(
      * what the message box is doing. Returns false if it was not accepted, so the caller can keep
      * what the user typed.
      */
-    fun sendMessage(roomCode: String, messageText: String): Boolean {
+    fun sendMessage(roomCode: String, messageText: String, whisperTtlSeconds: Long? = null): Boolean {
         val username = _uiState.value.roomUsername
         if (username == null) {
             showError("Still joining the room, try again in a moment")
@@ -275,12 +284,13 @@ class ChatViewModel @Inject constructor(
             return true
         }
 
-        val replyTo = state.replyingTo?.let { quoted ->
+        // A whisper cannot quote anything, so a pending reply is dropped when sending one.
+        val replyTo = if (whisperTtlSeconds != null) null else state.replyingTo?.let { quoted ->
             ReplyRef(quoted.id, quoted.username, quoted.messageText.take(REPLY_SNIPPET_LENGTH))
         }
         _uiState.update { it.copy(replyingTo = null) }
         viewModelScope.launch {
-            val result = chatRepository.sendMessage(roomCode, text, username, replyTo)
+            val result = chatRepository.sendMessage(roomCode, text, username, replyTo, whisperTtlSeconds)
             if (result is Resource.Error) showError(result.message)
         }
         return true
@@ -328,6 +338,18 @@ class ChatViewModel @Inject constructor(
     fun deleteMessage(roomCode: String, messageId: String) {
         viewModelScope.launch {
             val result = chatRepository.deleteMessage(roomCode, messageId)
+            if (result is Resource.Error) showError(result.message)
+        }
+    }
+
+    /** The server's time as best known, for countdowns and for hiding expired whispers. */
+    fun serverNow(): Long = chatRepository.serverNow()
+
+    /** Opens a sealed whisper: this starts its timer for everyone in the room. */
+    fun revealWhisper(roomCode: String, message: Message) {
+        if (!message.isSealedFor(chatRepository.currentUid)) return
+        viewModelScope.launch {
+            val result = chatRepository.revealWhisper(roomCode, message.id)
             if (result is Resource.Error) showError(result.message)
         }
     }
@@ -536,6 +558,8 @@ class ChatViewModel @Inject constructor(
         searchJob?.cancel()
         blocksJob?.cancel()
         bansJob?.cancel()
+        cleanupJob?.cancel()
+        cleanupJob = null
         blocksJob = null
         bansJob = null
         messagesJob = null
@@ -552,7 +576,7 @@ class ChatViewModel @Inject constructor(
     // Emits the current time now and every few seconds, so "online" decays without new presence data.
     private fun ticker(): Flow<Long> = flow {
         while (true) {
-            emit(System.currentTimeMillis())
+            emit(chatRepository.serverNow())
             delay(TICK_MS)
         }
     }
@@ -582,5 +606,8 @@ class ChatViewModel @Inject constructor(
         const val HEARTBEAT_MS = 120_000L
         const val ONLINE_TIMEOUT_MS = 300_000L
         const val TICK_MS = 30_000L
+
+        // How often hidden whispers are cleaned up while a chat is open.
+        const val CLEANUP_INTERVAL_MS = 30_000L
     }
 }

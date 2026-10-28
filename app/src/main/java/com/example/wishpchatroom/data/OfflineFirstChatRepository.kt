@@ -19,10 +19,13 @@ import javax.inject.Singleton
 @Singleton
 class OfflineFirstChatRepository @Inject constructor(
     private val remote: ChatRemoteDataSource,
-    private val messageDao: MessageDao
+    private val messageDao: MessageDao,
+    private val clock: ServerClock
 ) : ChatRepository {
 
     override val currentUid: String? get() = remote.currentUid
+
+    override fun serverNow(): Long = clock.now()
 
     override fun observeMessages(roomCode: String, limit: Int): Flow<List<Message>> =
         messageDao.observeLatest(roomCode, limit).map { entities ->
@@ -36,14 +39,18 @@ class OfflineFirstChatRepository @Inject constructor(
             .replace("\\", "\\\\")
             .replace("%", "\\%")
             .replace("_", "\\_")
-        return messageDao.search(roomCode, "%$escaped%", SEARCH_LIMIT).map { entities ->
+        return messageDao.search(roomCode, "%$escaped%", SEARCH_LIMIT, clock.now(), currentUid.orEmpty()).map { entities ->
             entities.map { it.toDomain() }
         }
     }
 
     override suspend fun syncMessages(roomCode: String) {
         remote.observeLatestMessages(roomCode, SYNC_WINDOW).collect { messages ->
-            messageDao.upsertAll(messages.map { it.toEntity(roomCode) })
+            val now = clock.now()
+            // A whisper that is already hidden is never put back into the cache.
+            messageDao.upsertAll(
+                messages.map { it.toEntity(roomCode) }.filter { it.hideAt == null || it.hideAt > now }
+            )
         }
     }
 
@@ -51,10 +58,14 @@ class OfflineFirstChatRepository @Inject constructor(
         roomCode: String,
         messageText: String,
         username: String,
-        replyTo: ReplyRef?
+        replyTo: ReplyRef?,
+        whisperTtlSeconds: Long?
     ): Resource<Unit> {
         val uid = remote.currentUid ?: return Resource.Error("You must be logged in")
         val id = UUID.randomUUID().toString()
+        // A whisper cannot quote another message (the rules reject it too).
+        val quoted = if (whisperTtlSeconds != null) null else replyTo
+        val sentAt = System.currentTimeMillis()
 
         messageDao.upsert(
             MessageEntity(
@@ -63,14 +74,16 @@ class OfflineFirstChatRepository @Inject constructor(
                 uid = uid,
                 username = username,
                 messageText = messageText,
-                timestamp = System.currentTimeMillis(),
+                timestamp = sentAt,
                 status = MessageStatus.SENDING,
-                replyToId = replyTo?.messageId,
-                replyToUsername = replyTo?.username,
-                replyToText = replyTo?.text
+                replyToId = quoted?.messageId,
+                replyToUsername = quoted?.username,
+                replyToText = quoted?.text,
+                ttlSeconds = whisperTtlSeconds,
+                hideAt = whisperHideAt(sentAt, whisperTtlSeconds, null)
             )
         )
-        return deliver(roomCode, id, username, messageText, replyTo)
+        return deliver(roomCode, id, username, messageText, quoted, whisperTtlSeconds)
     }
 
     override suspend fun retryMessage(roomCode: String, messageId: String): Resource<Unit> {
@@ -78,7 +91,30 @@ class OfflineFirstChatRepository @Inject constructor(
         if (message.status != MessageStatus.FAILED) return Resource.Success(Unit)
 
         messageDao.updateStatus(messageId, MessageStatus.SENDING)
-        return deliver(roomCode, messageId, message.username, message.messageText, message.toDomain().replyTo)
+        return deliver(
+            roomCode, messageId, message.username, message.messageText, message.toDomain().replyTo, message.ttlSeconds
+        )
+    }
+
+    override suspend fun revealWhisper(roomCode: String, messageId: String): Resource<Unit> {
+        val message = messageDao.getById(messageId) ?: return Resource.Error("Message not found")
+        if (message.ttlSeconds == null || message.firstViewedAt != null || message.uid == remote.currentUid) {
+            return Resource.Success(Unit)
+        }
+        val result = remote.revealWhisper(roomCode, messageId)
+        if (result is Resource.Success) {
+            // Show the timer at once; the server's own stamp replaces this estimate when it syncs.
+            val viewedAt = clock.now()
+            messageDao.markViewed(messageId, viewedAt, whisperHideAt(message.timestamp, message.ttlSeconds, viewedAt))
+        }
+        return result
+    }
+
+    override suspend fun purgeExpired(roomCode: String) {
+        val now = clock.now()
+        val ids = messageDao.hiddenIds(roomCode, now, CLEANUP_BATCH)
+        if (ids.isNotEmpty()) remote.deleteMessages(roomCode, ids)
+        messageDao.purgeHidden(now)
     }
 
     override suspend fun editMessage(roomCode: String, messageId: String, newText: String): Resource<Unit> {
@@ -163,9 +199,10 @@ class OfflineFirstChatRepository @Inject constructor(
         id: String,
         username: String,
         messageText: String,
-        replyTo: ReplyRef?
+        replyTo: ReplyRef?,
+        whisperTtlSeconds: Long?
     ): Resource<Unit> {
-        val result = remote.sendMessage(roomCode, id, username, messageText, replyTo)
+        val result = remote.sendMessage(roomCode, id, username, messageText, replyTo, whisperTtlSeconds)
         messageDao.updateStatus(
             id,
             if (result is Resource.Success) MessageStatus.SENT else MessageStatus.FAILED
@@ -186,7 +223,10 @@ class OfflineFirstChatRepository @Inject constructor(
         replyToText = replyTo?.text,
         edited = edited,
         deleted = deleted,
-        reactionsJson = encodeReactions(reactions)
+        reactionsJson = encodeReactions(reactions),
+        ttlSeconds = ttlSeconds,
+        firstViewedAt = firstViewedAt,
+        hideAt = whisperHideAt(timestamp, ttlSeconds, firstViewedAt)
     )
 
     private companion object {
@@ -198,5 +238,8 @@ class OfflineFirstChatRepository @Inject constructor(
 
         // The most matches a search shows.
         const val SEARCH_LIMIT = 100
+
+        // Hidden whispers asked to be deleted per cleanup pass (bounded so it cannot burn the delete quota).
+        const val CLEANUP_BATCH = 20
     }
 }

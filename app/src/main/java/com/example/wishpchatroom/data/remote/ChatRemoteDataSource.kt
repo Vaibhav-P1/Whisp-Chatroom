@@ -17,7 +17,9 @@ data class RemoteMessage(
     val replyTo: ReplyRef? = null,
     val edited: Boolean = false,
     val deleted: Boolean = false,
-    val reactions: Map<String, List<String>> = emptyMap()
+    val reactions: Map<String, List<String>> = emptyMap(),
+    val ttlSeconds: Long? = null,
+    val firstViewedAt: Long? = null
 )
 
 /** Everything the chat feature needs from the network. The repository decides what to cache. */
@@ -36,8 +38,15 @@ interface ChatRemoteDataSource {
         id: String,
         username: String,
         messageText: String,
-        replyTo: ReplyRef? = null
+        replyTo: ReplyRef? = null,
+        ttlSeconds: Long? = null
     ): Resource<Unit>
+
+    /** Starts a whisper's timer. The server stamps the time; the rules allow it once, for non-authors. */
+    suspend fun revealWhisper(roomCode: String, messageId: String): Resource<Unit>
+
+    /** Best-effort removal of hidden whispers. Failures are ignored by the caller. */
+    suspend fun deleteMessages(roomCode: String, messageIds: List<String>)
 
     suspend fun editMessage(roomCode: String, messageId: String, newText: String): Resource<Unit>
 

@@ -127,6 +127,15 @@
     <string name="open_messages">Messages</string>
     <string name="open_friends">Friends</string>
 
+    <!-- Whispers -->
+    <string name="whisper">Whisper</string>
+    <string name="whisper_off">Normal</string>
+    <string name="whisper_hint">Whisper messages hide themselves for everyone a short while after someone else opens them. Recipients may still copy or photograph them.</string>
+    <string name="whisper_sealed">🔒 Whisper. Tap to open. It hides %1$s after you open it.</string>
+    <string name="whisper_waiting">Whisper · hides %1$s after it is opened</string>
+    <string name="whisper_countdown">Whisper · hides in %1$s</string>
+    <string name="whisper_hidden_cap">Whisper · unopened whispers hide after 24 hours</string>
+
     <!-- Mission rooms -->
     <string name="mission_room">Mission room (ends on its own)</string>
     <string name="mission_title">Mission title</string>
