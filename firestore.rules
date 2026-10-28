@@ -40,7 +40,43 @@ service cloud.firestore {
         && validName(request.resource.data.firstName)
         && validName(request.resource.data.lastName)
         && request.resource.data.email is string;
-      allow delete: if false;
+      // Account deletion: the owner removes their own profile.
+      allow delete: if signedIn() && request.auth.uid == uid;
+
+      // Block list: private to the owner. A block is just "this uid is hidden from me".
+      match /blocks/{blockedUid} {
+        allow read: if signedIn() && request.auth.uid == uid;
+        allow create: if signedIn() && request.auth.uid == uid
+          && blockedUid != uid
+          && request.resource.data.keys().hasOnly(['createdAt'])
+          && request.resource.data.createdAt == request.time;
+        allow delete: if signedIn() && request.auth.uid == uid;
+      }
+    }
+
+    // Reports are write-only for clients: the reporter can read their own, nobody else can read any.
+    match /reports/{reportId} {
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(
+             ['reporterUid', 'targetUid', 'roomId', 'messageId', 'category', 'description', 'snapshot', 'createdAt'])
+        && request.resource.data.keys().hasAll(['reporterUid', 'targetUid', 'category', 'createdAt'])
+        && request.resource.data.reporterUid == request.auth.uid
+        && request.resource.data.targetUid is string
+        && request.resource.data.targetUid != request.auth.uid
+        && request.resource.data.category in
+             ['spam', 'harassment', 'hate', 'sexual', 'violence', 'self_harm', 'illegal', 'other']
+        && request.resource.data.get('description', '') is string
+        && request.resource.data.get('description', '').size() <= 500
+        && request.resource.data.get('snapshot', '') is string
+        && request.resource.data.get('snapshot', '').size() <= 500
+        && request.resource.data.get('messageId', '') is string
+        && request.resource.data.get('messageId', '').size() <= 100
+        && request.resource.data.createdAt == request.time
+        // A room-scoped report must come from a member of that room.
+        && (!('roomId' in request.resource.data)
+            || (request.resource.data.roomId is string && isMember(request.resource.data.roomId)));
+      allow read: if signedIn() && resource.data.reporterUid == request.auth.uid;
+      allow update, delete: if false;
     }
 
     match /rooms/{roomCode} {
@@ -67,12 +103,21 @@ service cloud.firestore {
         ||
         // Any signed-in user joins an open room by adding only their own uid.
         (resource.data.roomOpen == true
+          && !exists(/databases/$(database)/documents/rooms/$(roomCode)/bans/$(request.auth.uid))
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members'])
           && request.resource.data.members.diff(resource.data.members).affectedKeys().hasOnly([request.auth.uid])
           && request.resource.data.members.diff(resource.data.members).addedKeys().hasOnly([request.auth.uid])
           // hasOnly is also true for an empty set, so require a real addition: renaming yourself is not joining.
           && request.resource.data.members.diff(resource.data.members).addedKeys().size() == 1
           && validName(request.resource.data.members[request.auth.uid]))
+        ||
+        // The owner removes exactly one other member (kick). The client also writes a ban doc and a
+        // modlog entry in the same batch.
+        (resource.data.creatorUid == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members'])
+          && request.resource.data.members.diff(resource.data.members).affectedKeys().size() == 1
+          && request.resource.data.members.diff(resource.data.members).removedKeys().size() == 1
+          && !(resource.data.creatorUid in request.resource.data.members.diff(resource.data.members).removedKeys()))
         ||
         // A member (not the owner) leaves by removing only their own uid.
         (resource.data.creatorUid != request.auth.uid
@@ -127,6 +172,32 @@ service cloud.firestore {
         );
 
         allow delete: if isOwner(roomCode);
+      }
+
+      // Bans: only the owner manages them; the join rule above refuses banned uids.
+      match /bans/{bannedUid} {
+        allow read: if isOwner(roomCode);
+        allow create: if isOwner(roomCode)
+          && bannedUid != request.auth.uid
+          && request.resource.data.keys().hasOnly(['username', 'bannedAt', 'reason'])
+          && validName(request.resource.data.username)
+          && request.resource.data.bannedAt == request.time
+          && request.resource.data.reason is string
+          && request.resource.data.reason.size() <= 100;
+        allow update: if false;
+        allow delete: if isOwner(roomCode);
+      }
+
+      // Moderation log: append-only, visible to the owner only.
+      match /modlog/{entryId} {
+        allow read: if isOwner(roomCode);
+        allow create: if isOwner(roomCode)
+          && request.resource.data.keys().hasOnly(['action', 'targetUid', 'actorUid', 'at'])
+          && request.resource.data.action in ['kick', 'ban', 'unban']
+          && request.resource.data.targetUid is string
+          && request.resource.data.actorUid == request.auth.uid
+          && request.resource.data.at == request.time;
+        allow update, delete: if false;
       }
 
       // Presence docs are keyed by uid so a user can only write their own.
