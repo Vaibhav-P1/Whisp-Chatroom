@@ -145,6 +145,57 @@ class ChatScreenTest {
         composeRule.onNodeWithText(string(R.string.mission_outcome)).assertExists()
     }
 
+    private fun whisper(uid: String, viewedAt: Long? = null, ttl: Long = 60) = Message(
+        id = "w1", uid = uid, username = if (uid == "me") "ada" else "bob", messageText = "the secret plan",
+        timestamp = System.currentTimeMillis() - 1_000, ttlSeconds = ttl, firstViewedAt = viewedAt
+    )
+
+    @Test
+    fun `a whisper from someone else is sealed until it is opened`() {
+        repo.messages.value = listOf(whisper("u2"))
+        showChat()
+        composeRule.onNodeWithText("the secret plan").assertDoesNotExist()
+        composeRule.onNodeWithText(
+            composeRule.activity.getString(R.string.whisper_sealed, "1 minute")
+        ).performClick()
+        composeRule.waitForIdle()
+        assertEquals(listOf("w1"), repo.revealed)
+    }
+
+    @Test
+    fun `your own whisper shows its text and says the timer starts when it is opened`() {
+        repo.messages.value = listOf(whisper("me"))
+        showChat()
+        composeRule.onNodeWithText("the secret plan").assertExists()
+        composeRule.onNodeWithText(
+            composeRule.activity.getString(R.string.whisper_waiting, "1 minute")
+        ).assertExists()
+    }
+
+    @Test
+    fun `an opened whisper shows the text with a live countdown`() {
+        repo.messages.value = listOf(whisper("u2", viewedAt = System.currentTimeMillis() - 5_000))
+        showChat()
+        composeRule.onNodeWithText("the secret plan").assertExists()
+    }
+
+    @Test
+    fun `a whisper whose timer ran out is not shown`() {
+        repo.messages.value = listOf(whisper("u2", viewedAt = System.currentTimeMillis() - 120_000, ttl = 10))
+        showChat()
+        composeRule.onNodeWithText("the secret plan").assertDoesNotExist()
+    }
+
+    @Test
+    fun `choosing a whisper lifetime sends the message as a whisper`() {
+        showChat()
+        composeRule.onNodeWithText("🔒 1 minute").performClick()
+        composeRule.onNode(hasSetTextAction()).performTextInput("psst")
+        composeRule.onNodeWithContentDescription(string(R.string.send)).performClick()
+        composeRule.waitForIdle()
+        assertEquals(listOf<Long?>(60L), repo.sentTtls)
+    }
+
     @Test
     fun `a closed room shows the banner and disables the input`() {
         repo.room.value = repo.room.value!!.copy(roomOpen = false)

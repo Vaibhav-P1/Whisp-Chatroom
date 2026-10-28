@@ -40,9 +40,22 @@ class OfflineFirstChatRepositoryTest {
                     .take(limit)
             }
 
-        override fun search(roomCode: String, pattern: String, limit: Int): Flow<List<MessageEntity>> {
+        override fun search(roomCode: String, pattern: String, limit: Int, nowMillis: Long, myUid: String): Flow<List<MessageEntity>> {
             lastSearchPattern = pattern
             return flowOf(emptyList())
+        }
+
+        override suspend fun markViewed(id: String, viewedAt: Long, hideAt: Long?) =
+            update(id) { it.copy(firstViewedAt = viewedAt, hideAt = hideAt) }
+
+        override suspend fun hiddenIds(roomCode: String, nowMillis: Long, limit: Int) =
+            rows.value.filter { it.roomCode == roomCode && (it.hideAt ?: Long.MAX_VALUE) <= nowMillis }
+                .take(limit).map { it.id }
+
+        override suspend fun purgeHidden(nowMillis: Long): Int {
+            val before = rows.value.size
+            change { list -> list.filterNot { (it.hideAt ?: Long.MAX_VALUE) <= nowMillis } }
+            return before - rows.value.size
         }
 
         override suspend fun count(roomCode: String) = rows.value.count { it.roomCode == roomCode }
@@ -83,6 +96,11 @@ class OfflineFirstChatRepositoryTest {
         var olderPage: List<RemoteMessage> = emptyList()
         var olderError: Exception? = null
         val sentIds = mutableListOf<String>()
+        val sentTtls = mutableListOf<Long?>()
+        val sentReplies = mutableListOf<ReplyRef?>()
+        val revealCalls = mutableListOf<String>()
+        val deletedRemote = mutableListOf<String>()
+        var revealResult: Resource<Unit> = Resource.Success(Unit)
         val reactionCalls = mutableListOf<Boolean>()
         var deleteRoomCalls = 0
 
@@ -93,9 +111,22 @@ class OfflineFirstChatRepositoryTest {
             return olderPage
         }
 
-        override suspend fun sendMessage(roomCode: String, id: String, username: String, messageText: String, replyTo: ReplyRef?): Resource<Unit> {
+        override suspend fun sendMessage(
+            roomCode: String, id: String, username: String, messageText: String, replyTo: ReplyRef?, ttlSeconds: Long?
+        ): Resource<Unit> {
             sentIds += id
+            sentTtls += ttlSeconds
+            sentReplies += replyTo
             return sendResult
+        }
+
+        override suspend fun revealWhisper(roomCode: String, messageId: String): Resource<Unit> {
+            revealCalls += messageId
+            return revealResult
+        }
+
+        override suspend fun deleteMessages(roomCode: String, messageIds: List<String>) {
+            deletedRemote += messageIds
         }
 
         override suspend fun editMessage(roomCode: String, messageId: String, newText: String) = editResult
@@ -120,7 +151,14 @@ class OfflineFirstChatRepositoryTest {
     private val code = "ABC123"
     private val dao = FakeMessageDao()
     private val remote = FakeRemote()
-    private val repo = OfflineFirstChatRepository(remote, dao)
+    private class FakeClock(var time: Long = 1_000_000L) : ServerClock {
+        override fun now() = time
+        override fun needsCalibration() = false
+        override fun calibrate(serverMillis: Long, localBefore: Long, localAfter: Long) {}
+    }
+
+    private val clock = FakeClock()
+    private val repo = OfflineFirstChatRepository(remote, dao, clock)
 
     private fun entity(
         id: String,

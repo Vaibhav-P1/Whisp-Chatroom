@@ -238,11 +238,18 @@ class FakeContactsRepository : com.example.wishpchatroom.data.ContactsRepository
 class FakeChatRepository : ChatRepository {
     override var currentUid: String? = "me"
 
+    var now: Long = System.currentTimeMillis()
+    override fun serverNow(): Long = now
+    val revealed = mutableListOf<String>()
+    var revealResult: Resource<Unit> = Resource.Success(Unit)
+    var purgeCalls = 0
+
     val room = MutableStateFlow<Room?>(null)
     val presence = MutableStateFlow<List<Presence>>(emptyList())
     val messages = MutableStateFlow<List<Message>>(emptyList())
 
     var sent = mutableListOf<Triple<String, String, ReplyRef?>>()
+    val sentTtls = mutableListOf<Long?>()
     var edits = mutableListOf<Pair<String, String>>()
     var sendResult: Resource<Unit> = Resource.Success(Unit)
     var leaveResult: Resource<Unit> = Resource.Success(Unit)
@@ -260,10 +267,24 @@ class FakeChatRepository : ChatRepository {
 
     override suspend fun syncMessages(roomCode: String) {}
 
-    override suspend fun sendMessage(roomCode: String, messageText: String, username: String, replyTo: ReplyRef?): Resource<Unit> {
+    override suspend fun sendMessage(
+        roomCode: String,
+        messageText: String,
+        username: String,
+        replyTo: ReplyRef?,
+        whisperTtlSeconds: Long?
+    ): Resource<Unit> {
         sent += Triple(messageText, username, replyTo)
+        sentTtls += whisperTtlSeconds
         return sendResult
     }
+
+    override suspend fun revealWhisper(roomCode: String, messageId: String): Resource<Unit> {
+        revealed += messageId
+        return revealResult
+    }
+
+    override suspend fun purgeExpired(roomCode: String) { purgeCalls++ }
 
     override suspend fun editMessage(roomCode: String, messageId: String, newText: String): Resource<Unit> {
         edits += messageId to newText
