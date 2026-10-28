@@ -11,8 +11,31 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/rooms/$(roomCode)).data;
     }
 
+    // Mission rooms expire. Expiry is derived from the server-stamped creation time plus the chosen
+    // duration, so a client can neither pick nor extend it. After expiry the room is read-only for a
+    // 24 hour grace period, after that the rules deny all access to it.
+    function expiresAtOf(data) {
+      return data.timestamp + duration.value(data.mission.durationSeconds, 's');
+    }
+
+    function deleteAtOf(data) {
+      return expiresAtOf(data) + duration.value(24, 'h');
+    }
+
+    function dataActive(data) {
+      return !('mission' in data) || request.time < expiresAtOf(data);
+    }
+
+    function dataGone(data) {
+      return 'mission' in data && request.time >= deleteAtOf(data);
+    }
+
+    function roomActive(roomCode) {
+      return dataActive(room(roomCode));
+    }
+
     function isMember(roomCode) {
-      return signedIn() && request.auth.uid in room(roomCode).members;
+      return signedIn() && request.auth.uid in room(roomCode).members && !dataGone(room(roomCode));
     }
 
     function isCodeRoom(data) {
@@ -29,6 +52,15 @@ service cloud.firestore {
           && existsAfter(/databases/$(database)/documents/users/$(request.auth.uid)/friends/$(members.keys()[1])))
         || (members.keys()[1] == request.auth.uid
           && existsAfter(/databases/$(database)/documents/users/$(request.auth.uid)/friends/$(members.keys()[0])));
+    }
+
+    function validMission(m) {
+      return m is map
+        && m.keys().hasOnly(['title', 'goal', 'durationSeconds'])
+        && m.keys().hasAll(['title', 'goal', 'durationSeconds'])
+        && m.title is string && m.title.size() >= 1 && m.title.size() <= 60
+        && m.goal is string && m.goal.size() <= 200
+        && m.durationSeconds in [1800, 21600, 86400];
     }
 
     function isOwner(roomCode) {
@@ -121,6 +153,20 @@ service cloud.firestore {
           && request.resource.data.get('archived', false) is bool;
       }
 
+      // Saved notes: private copies of text the user wants to keep after a room is gone.
+      match /saved/{noteId} {
+        allow read, delete: if signedIn() && request.auth.uid == uid;
+        allow create: if signedIn() && request.auth.uid == uid
+          && request.resource.data.keys().hasOnly(['roomTitle', 'author', 'text', 'source', 'savedAt'])
+          && request.resource.data.roomTitle is string && request.resource.data.roomTitle.size() <= 100
+          && request.resource.data.author is string && request.resource.data.author.size() <= 50
+          && request.resource.data.text is string && request.resource.data.text.size() >= 1
+          && request.resource.data.text.size() <= 2000
+          && request.resource.data.source in ['message', 'outcome', 'tasks']
+          && request.resource.data.savedAt == request.time;
+        allow update: if false;
+      }
+
       // Block list: private to the owner. A block is just "this uid is hidden from me".
       match /blocks/{blockedUid} {
         allow read: if signedIn() && request.auth.uid == uid;
@@ -197,7 +243,8 @@ service cloud.firestore {
 
     match /rooms/{roomCode} {
       // The room code is the secret: rooms can be fetched by code but never listed.
-      allow get: if signedIn() && (isCodeRoom(resource.data) || request.auth.uid in resource.data.members);
+      allow get: if signedIn() && !dataGone(resource.data)
+        && (isCodeRoom(resource.data) || request.auth.uid in resource.data.members);
       allow list: if false;
 
       // A direct message: a deterministic two-member room between two friends, created in the batch
@@ -235,8 +282,9 @@ service cloud.firestore {
 
       allow create: if signedIn()
         && request.resource.data.keys().hasOnly(
-             ['roomCode', 'creatorUid', 'roomOpen', 'members', 'temporary', 'timestamp'])
+             ['roomCode', 'creatorUid', 'roomOpen', 'members', 'temporary', 'timestamp', 'mission'])
         && roomCode.matches('[A-Z0-9]{6}')
+        && (!('mission' in request.resource.data) || validMission(request.resource.data.mission))
         && request.resource.data.roomCode == roomCode
         && request.resource.data.creatorUid == request.auth.uid
         && request.resource.data.roomOpen == true
@@ -254,6 +302,7 @@ service cloud.firestore {
         // Any signed-in user joins an open room by adding only their own uid.
         (isCodeRoom(resource.data)
           && resource.data.roomOpen == true
+          && dataActive(resource.data)
           && !exists(/databases/$(database)/documents/rooms/$(roomCode)/bans/$(request.auth.uid))
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members'])
           && request.resource.data.members.diff(resource.data.members).affectedKeys().hasOnly([request.auth.uid])
@@ -278,6 +327,21 @@ service cloud.firestore {
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members'])
           && !(request.auth.uid in request.resource.data.members)
           && request.resource.data.members.diff(resource.data.members).affectedKeys().hasOnly([request.auth.uid]))
+        ||
+        // The owner posts the announcement (while active) and the final outcome (until the room is gone).
+        (isCodeRoom(resource.data)
+          && 'mission' in resource.data
+          && resource.data.creatorUid == request.auth.uid
+          && !dataGone(resource.data)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['mission'])
+          && request.resource.data.mission.diff(resource.data.mission).affectedKeys().hasOnly(['announcement', 'outcome'])
+          && request.resource.data.mission.keys().hasOnly(['title', 'goal', 'durationSeconds', 'announcement', 'outcome'])
+          && request.resource.data.mission.get('announcement', '') is string
+          && request.resource.data.mission.get('announcement', '').size() <= 500
+          && request.resource.data.mission.get('outcome', '') is string
+          && request.resource.data.mission.get('outcome', '').size() <= 1000
+          && (request.resource.data.mission.get('announcement', '') == resource.data.mission.get('announcement', '')
+              || dataActive(resource.data)))
         ||
         // DM: either person locks the conversation (block or unfriend). Only the locker unlocks it,
         // or a fresh friendship does, so the other side cannot tell a block from an unfriend.
@@ -312,6 +376,7 @@ service cloud.firestore {
 
         allow create: if isMember(roomCode)
           && room(roomCode).roomOpen == true
+          && roomActive(roomCode)
           && !isLocked(roomCode)
           && request.resource.data.keys().hasOnly(['uid', 'username', 'messageText', 'timestamp', 'replyTo'])
           && request.resource.data.uid == request.auth.uid
@@ -326,6 +391,7 @@ service cloud.firestore {
         allow update: if isMember(roomCode) && (
           // The author edits their own message while the room is open.
           (room(roomCode).roomOpen == true
+            && roomActive(roomCode)
             && resource.data.uid == request.auth.uid
             && resource.data.get('deleted', false) != true
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['messageText', 'edited'])
@@ -345,6 +411,7 @@ service cloud.firestore {
           // the supported emoji are accepted. (Rules cannot check that a member only touches their
           // own uid inside the lists.)
           (room(roomCode).roomOpen == true
+            && roomActive(roomCode)
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions'])
             && request.resource.data.reactions is map
             && request.resource.data.reactions.keys().hasOnly(['👍', '😂', '😮', '😢', '🙏']))
@@ -379,11 +446,33 @@ service cloud.firestore {
         allow update, delete: if false;
       }
 
+      // Checklist: the owner writes it, every member can tick items, all only while the room is active.
+      match /tasks/{taskId} {
+        allow read: if isMember(roomCode);
+        allow create: if isOwner(roomCode)
+          && roomActive(roomCode)
+          && request.resource.data.keys().hasOnly(['text', 'done', 'doneBy', 'createdBy', 'order'])
+          && request.resource.data.text is string
+          && request.resource.data.text.size() >= 1
+          && request.resource.data.text.size() <= 100
+          && request.resource.data.done == false
+          && request.resource.data.doneBy == ''
+          && request.resource.data.createdBy == request.auth.uid
+          && request.resource.data.order is int;
+        allow update: if isMember(roomCode)
+          && roomActive(roomCode)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['done', 'doneBy'])
+          && request.resource.data.done is bool
+          && request.resource.data.doneBy == (request.resource.data.done ? request.auth.uid : '');
+        allow delete: if isOwner(roomCode) && roomActive(roomCode);
+      }
+
       // Presence docs are keyed by uid so a user can only write their own.
       match /presence/{presenceId} {
         allow read: if isMember(roomCode);
 
         allow create, update: if isMember(roomCode)
+          && roomActive(roomCode)
           && presenceId == request.auth.uid
           && request.resource.data.keys().hasOnly(['username', 'isPresent', 'lastSeen'])
           && request.resource.data.username == room(roomCode).members[request.auth.uid]
