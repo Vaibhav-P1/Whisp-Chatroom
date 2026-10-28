@@ -4,8 +4,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.wishpchatroom.data.MissionRepository
 import com.example.wishpchatroom.data.MissionTask
+import com.example.wishpchatroom.data.ReminderScheduler
 import com.example.wishpchatroom.data.Resource
 import com.example.wishpchatroom.data.SavedNote
+import com.example.wishpchatroom.data.reminderDelayMs
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -20,12 +22,15 @@ import javax.inject.Inject
 data class MissionUiState(
     val tasks: List<MissionTask> = emptyList(),
     val errorMessage: String? = null,
-    val infoMessage: String? = null
+    val infoMessage: String? = null,
+    // A local notification is scheduled for 10 minutes before the mission ends.
+    val reminderOn: Boolean = false
 )
 
 @HiltViewModel
 class MissionViewModel @Inject constructor(
-    private val missions: MissionRepository
+    private val missions: MissionRepository,
+    private val reminders: ReminderScheduler
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(MissionUiState())
@@ -35,10 +40,30 @@ class MissionViewModel @Inject constructor(
 
     /** Follows the checklist while the mission panel is open. */
     fun startWatching(roomCode: String) {
+        _uiState.update { it.copy(reminderOn = reminders.isScheduled(roomCode)) }
         tasksJob?.cancel()
         tasksJob = viewModelScope.launch {
             missions.observeTasks(roomCode).collect { tasks -> _uiState.update { it.copy(tasks = tasks) } }
         }
+    }
+
+    /**
+     * Turns the 10 minute reminder on or off. [nowMillis] is the server time as the screen knows it, so
+     * a wrong device clock does not move the reminder.
+     */
+    fun setReminder(roomCode: String, title: String, expiresAtMillis: Long?, nowMillis: Long, on: Boolean) {
+        if (!on) {
+            reminders.cancel(roomCode)
+            _uiState.update { it.copy(reminderOn = false, errorMessage = null) }
+            return
+        }
+        val delay = expiresAtMillis?.let { reminderDelayMs(it, nowMillis) }
+        if (delay == null) {
+            _uiState.update { it.copy(reminderOn = false, errorMessage = "Less than 10 minutes are left, too late for a reminder.") }
+            return
+        }
+        reminders.schedule(roomCode, title, delay)
+        _uiState.update { it.copy(reminderOn = true, errorMessage = null, infoMessage = "You will be reminded 10 minutes before it ends.") }
     }
 
     fun stopWatching() {

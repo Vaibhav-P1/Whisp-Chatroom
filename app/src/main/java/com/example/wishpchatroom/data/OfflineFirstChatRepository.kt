@@ -20,7 +20,8 @@ import javax.inject.Singleton
 class OfflineFirstChatRepository @Inject constructor(
     private val remote: ChatRemoteDataSource,
     private val messageDao: MessageDao,
-    private val clock: ServerClock
+    private val clock: ServerClock,
+    private val reminders: ReminderScheduler
 ) : ChatRepository {
 
     override val currentUid: String? get() = remote.currentUid
@@ -169,17 +170,31 @@ class OfflineFirstChatRepository @Inject constructor(
 
     override suspend fun leaveRoom(roomCode: String): Resource<Unit> {
         val result = remote.leaveRoom(roomCode)
-        if (result is Resource.Success) messageDao.deleteRoom(roomCode)
+        if (result is Resource.Success) {
+            messageDao.deleteRoom(roomCode)
+            reminders.cancel(roomCode)
+        }
         return result
     }
 
-    override suspend fun forgetRoom(roomCode: String) = messageDao.deleteRoom(roomCode)
+    override suspend fun forgetRoom(roomCode: String) {
+        messageDao.deleteRoom(roomCode)
+        reminders.cancel(roomCode)
+    }
 
-    override suspend fun closeRoom(roomCode: String): Resource<Unit> = remote.closeRoom(roomCode)
+    override suspend fun closeRoom(roomCode: String): Resource<Unit> {
+        val result = remote.closeRoom(roomCode)
+        // A closed room has nothing left to remind about.
+        if (result is Resource.Success) reminders.cancel(roomCode)
+        return result
+    }
 
     override suspend fun deleteRoom(roomCode: String): Resource<Unit> {
         val result = remote.deleteRoom(roomCode)
-        if (result is Resource.Success) messageDao.deleteRoom(roomCode)
+        if (result is Resource.Success) {
+            messageDao.deleteRoom(roomCode)
+            reminders.cancel(roomCode)
+        }
         return result
     }
 

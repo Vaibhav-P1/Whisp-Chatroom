@@ -11,9 +11,11 @@ import com.example.wishpchatroom.data.FirestoreUserRepository
 import com.example.wishpchatroom.data.MissionRepository
 import com.example.wishpchatroom.data.ModerationRepository
 import com.example.wishpchatroom.data.OfflineFirstChatRepository
+import com.example.wishpchatroom.data.ReminderScheduler
 import com.example.wishpchatroom.data.RoomRepository
 import com.example.wishpchatroom.data.ServerClock
 import com.example.wishpchatroom.data.UserRepository
+import com.example.wishpchatroom.data.WorkManagerReminderScheduler
 import com.example.wishpchatroom.data.remote.ChatRemoteDataSource
 import com.example.wishpchatroom.data.remote.FirestoreChatRemoteDataSource
 import dagger.Binds
@@ -41,6 +43,10 @@ abstract class RepositoryModule {
     @Binds
     @Singleton
     abstract fun bindContactsRepository(impl: FirestoreContactsRepository): ContactsRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindReminderScheduler(impl: WorkManagerReminderScheduler): ReminderScheduler
 
     @Binds
     @Singleton

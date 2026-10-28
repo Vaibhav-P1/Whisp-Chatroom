@@ -40,13 +40,15 @@ class MainActivity : ComponentActivity() {
             val navController = rememberNavController()
             val authViewModel: AuthViewModel = hiltViewModel()
             // wishp://join/CODE opens the join form with the room code filled in.
+            // wishp://room/CODE (from a reminder notification) opens that room.
+            val openRoom = remember { intent?.data?.takeIf { it.scheme == "wishp" && it.host == "room" }?.lastPathSegment }
             val joinCode = remember { intent?.data?.takeIf { it.scheme == "wishp" && it.host == "join" }?.lastPathSegment }
             WishpChatRoomTheme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    NavigationGraph(navController = navController, authViewModel = authViewModel, joinCode = joinCode)
+                    NavigationGraph(navController = navController, authViewModel = authViewModel, joinCode = joinCode, openRoom = openRoom)
                 }
             }
         }
@@ -57,11 +59,19 @@ class MainActivity : ComponentActivity() {
 fun NavigationGraph(
     navController: NavHostController,
     authViewModel: AuthViewModel,
-    joinCode: String? = null
+    joinCode: String? = null,
+    openRoom: String? = null
 ) {
     // Decided once, synchronously, so a logged-in user never sees the signup screen on cold start.
     val startDestination = remember {
         if (authViewModel.isLoggedIn()) Screen.ChatRoomsScreen.route else Screen.SignupScreen.route
+    }
+
+    // A notification tap: go straight into the room (the rooms list stays underneath for Back).
+    LaunchedEffect(openRoom) {
+        if (openRoom != null && authViewModel.isLoggedIn()) {
+            navController.navigate("${Screen.ChatScreen.route}/$openRoom")
+        }
     }
 
     LaunchedEffect(Unit) {

@@ -127,6 +127,13 @@
     <string name="open_messages">Messages</string>
     <string name="open_friends">Friends</string>
 
+    <!-- Unread -->
+    <string name="new_messages_divider">New messages</string>
+    <plurals name="new_messages">
+        <item quantity="one">↓ %1$d new message</item>
+        <item quantity="other">↓ %1$d new messages</item>
+    </plurals>
+
     <!-- Whispers -->
     <string name="whisper">Whisper</string>
     <string name="whisper_off">Normal</string>
@@ -158,6 +165,8 @@
     <string name="mission_remaining">%1$s left</string>
     <string name="mission_ended_banner">This mission has ended. You can read everything for the next 24 hours; save what you need.</string>
     <string name="mission_ended_short">Mission ended</string>
+    <string name="mission_reminder">Remind me 10 minutes before it ends</string>
+    <string name="mission_reminder_denied">Notifications are off for this app, so no reminder can be shown. You can allow them in the system settings.</string>
     <string name="mission_save_note">Save to notes</string>
     <string name="mission_save_tasks">Save checklist</string>
     <string name="mission_share_link">Share invite link</string>

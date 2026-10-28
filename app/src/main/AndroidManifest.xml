@@ -5,6 +5,8 @@
     <!-- Add internet permission for Firebase -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Asked for in context, only when the user turns on a mission reminder. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:name=".WishpApplication"
@@ -36,6 +38,16 @@
                 <category android:name="android.intent.category.BROWSABLE" />
 
                 <data android:host="join" android:scheme="wishp" />
+            </intent-filter>
+
+            <!-- Reminder notifications open the room: wishp://room/ROOMCODE -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+
+                <data android:host="room" android:scheme="wishp" />
             </intent-filter>
         </activity>
     </application>

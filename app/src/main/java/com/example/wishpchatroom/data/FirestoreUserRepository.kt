@@ -15,7 +15,8 @@ import javax.inject.Singleton
 class FirestoreUserRepository @Inject constructor(
     private val auth: FirebaseAuth,
     private val firestore: FirebaseFirestore,
-    private val database: AppDatabase
+    private val database: AppDatabase,
+    private val reminders: ReminderScheduler
 ) : UserRepository {
     override suspend fun signUp(email: String, password: String, firstName: String, lastName: String): Resource<Boolean> =
         try {
@@ -66,6 +67,7 @@ class FirestoreUserRepository @Inject constructor(
             deleteProfileData(user.uid)
 
             user.delete().await()
+            reminders.cancelAll()
             clearLocalData()
             Resource.Success(Unit)
         } catch (e: Exception) {

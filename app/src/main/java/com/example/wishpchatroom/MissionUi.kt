@@ -1,6 +1,14 @@
 package com.example.wishpchatroom
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
+import androidx.compose.material3.Switch
+import com.example.wishpchatroom.data.REMINDER_LEAD_MS
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -115,7 +123,9 @@ fun MissionDialog(
     phase: MissionPhase,
     isOwner: Boolean,
     onDismiss: () -> Unit,
-    viewModel: MissionViewModel = hiltViewModel()
+    viewModel: MissionViewModel = hiltViewModel(),
+    expiresAt: Long? = null,
+    now: Long = 0L
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -123,6 +133,14 @@ fun MissionDialog(
     var announcement by remember { mutableStateOf(mission.announcement) }
     var outcome by remember { mutableStateOf(mission.outcome) }
     var newTask by remember { mutableStateOf("") }
+    var notificationsDenied by remember { mutableStateOf(false) }
+
+    // Android 13+ asks for the notification permission only now, in context, when a reminder is turned on.
+    val askPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        notificationsDenied = !granted
+        if (granted) viewModel.setReminder(roomCode, mission.title, expiresAt, now, true)
+    }
+    val canRemind = active && expiresAt != null && expiresAt - now > REMINDER_LEAD_MS
 
     // The checklist listener runs only while this dialog is open.
     DisposableEffect(roomCode) {
@@ -230,6 +248,30 @@ fun MissionDialog(
                 if (mission.outcome.isNotBlank()) {
                     TextButton(onClick = { viewModel.saveNote(roomTitleForNotes, myName, mission.outcome, "outcome") }) {
                         Text(stringResource(R.string.mission_save_note))
+                    }
+                }
+
+                if (canRemind) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            stringResource(R.string.mission_reminder),
+                            modifier = Modifier.weight(1f),
+                            fontSize = 14.sp
+                        )
+                        Switch(
+                            checked = state.reminderOn,
+                            onCheckedChange = { on ->
+                                notificationsDenied = false
+                                val needsPermission = on && Build.VERSION.SDK_INT >= 33 &&
+                                    ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
+                                    PackageManager.PERMISSION_GRANTED
+                                if (needsPermission) askPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                else viewModel.setReminder(roomCode, mission.title, expiresAt, now, on)
+                            }
+                        )
+                    }
+                    if (notificationsDenied) {
+                        Text(stringResource(R.string.mission_reminder_denied), color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
                     }
                 }
 
