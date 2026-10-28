@@ -16,6 +16,7 @@ import com.example.wishpchatroom.data.Message
 import com.example.wishpchatroom.data.Resource
 import com.example.wishpchatroom.data.Room
 import com.example.wishpchatroom.testing.FakeChatRepository
+import com.example.wishpchatroom.testing.FakeContactsRepository
 import com.example.wishpchatroom.testing.FakeModerationRepository
 import com.example.wishpchatroom.ui.theme.WishpChatRoomTheme
 import com.example.wishpchatroom.viewmodel.ChatViewModel
@@ -53,7 +54,7 @@ class ChatScreenTest {
                 ChatScreen(
                     roomCode = code,
                     onNavigateBack = { leftChat++ },
-                    chatViewModel = ChatViewModel(repo, FakeModerationRepository())
+                    chatViewModel = ChatViewModel(repo, FakeModerationRepository(), FakeContactsRepository())
                 )
             }
         }

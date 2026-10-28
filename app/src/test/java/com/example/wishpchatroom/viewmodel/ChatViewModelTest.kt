@@ -9,6 +9,7 @@ import com.example.wishpchatroom.data.ReportCategory
 import com.example.wishpchatroom.data.Resource
 import com.example.wishpchatroom.data.Room
 import com.example.wishpchatroom.testing.FakeChatRepository
+import com.example.wishpchatroom.testing.FakeContactsRepository
 import com.example.wishpchatroom.testing.FakeModerationRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -41,7 +42,7 @@ class ChatViewModelTest {
 
     private fun loadedVm(repo: FakeChatRepository = FakeChatRepository()): Pair<ChatViewModel, FakeChatRepository> {
         repo.room.value = room()
-        val vm = ChatViewModel(repo, moderation)
+        val vm = ChatViewModel(repo, moderation, FakeContactsRepository())
         vm.loadRoom(code)
         vm.loadMessages(code)
         return vm to repo
@@ -103,7 +104,7 @@ class ChatViewModelTest {
     @Test
     fun `sending before the username is known is rejected`() {
         val repo = FakeChatRepository()
-        val vm = ChatViewModel(repo, moderation)
+        val vm = ChatViewModel(repo, moderation, FakeContactsRepository())
         assertFalse(vm.sendMessage(code, "hello"))
         assertNotNull(vm.uiState.value.errorMessage)
         assertTrue(repo.sent.isEmpty())
@@ -342,7 +343,7 @@ class ChatViewModelTest {
             currentUid = "u2"
             room.value = room()
         }
-        val vm = ChatViewModel(repo, moderation)
+        val vm = ChatViewModel(repo, moderation, FakeContactsRepository())
         vm.loadRoom(code)
         val cy = vm.uiState.value.members.first { it.uid == "u3" }
         vm.removeAndBan(code, cy)
@@ -367,10 +368,54 @@ class ChatViewModelTest {
             currentUid = "u2"
             room.value = room()
         }
-        val vm = ChatViewModel(repo, moderation)
+        val vm = ChatViewModel(repo, moderation, FakeContactsRepository())
         vm.loadRoom(code)
         assertEquals(RoomStatus.OPEN, vm.uiState.value.roomStatus)
         repo.room.value = room().copy(members = mapOf("me" to "ada", "u3" to "cy"))
         assertEquals(RoomStatus.REMOVED, vm.uiState.value.roomStatus)
+    }
+
+    // --- direct messages ---
+
+    @Test
+    fun `a dm shows the friend name and its lock state`() {
+        val repo = FakeChatRepository().apply {
+            room.value = Room(
+                roomCode = "dm_me_u2", creatorUid = "me", roomOpen = true,
+                members = mapOf("me" to "Ada L", "u2" to "Bob B"), type = "dm", locked = true
+            )
+        }
+        val contacts = FakeContactsRepository()
+        val vm = ChatViewModel(repo, moderation, contacts)
+        vm.loadRoom("dm_me_u2")
+        val state = vm.uiState.value
+        assertTrue(state.isDm)
+        assertEquals("Bob B", state.dmPeerName)
+        assertTrue(state.isLocked)
+        assertEquals(listOf("dm_me_u2"), contacts.reads)
+    }
+
+    @Test
+    fun `a code room is not a dm and does not touch the read marker`() {
+        val repo = FakeChatRepository().apply { room.value = room() }
+        val contacts = FakeContactsRepository()
+        val vm = ChatViewModel(repo, moderation, contacts)
+        vm.loadRoom(code)
+        assertFalse(vm.uiState.value.isDm)
+        assertFalse(vm.uiState.value.isLocked)
+        assertTrue(contacts.reads.isEmpty())
+    }
+
+    @Test
+    fun `leaving a dm marks it read`() {
+        val repo = FakeChatRepository().apply {
+            room.value = Room(roomCode = "dm_me_u2", creatorUid = "me", members = mapOf("me" to "Ada", "u2" to "Bob"), type = "dm")
+        }
+        val contacts = FakeContactsRepository()
+        val vm = ChatViewModel(repo, moderation, contacts)
+        vm.loadRoom("dm_me_u2")
+        contacts.reads.clear()
+        vm.leaveRoom("dm_me_u2") {}
+        assertEquals(listOf("dm_me_u2"), contacts.reads)
     }
 }

@@ -106,6 +106,83 @@ class FakeModerationRepository : ModerationRepository {
     override fun observeBans(roomCode: String): Flow<List<Ban>> = bans
 }
 
+class FakeContactsRepository : com.example.wishpchatroom.data.ContactsRepository {
+    override var currentUid: String? = "me"
+
+    val handle = MutableStateFlow<String?>(null)
+    val incoming = MutableStateFlow<List<com.example.wishpchatroom.data.FriendRequest>>(emptyList())
+    val outgoing = MutableStateFlow<List<com.example.wishpchatroom.data.FriendRequest>>(emptyList())
+    val friends = MutableStateFlow<List<com.example.wishpchatroom.data.Friend>>(emptyList())
+    val inbox = MutableStateFlow<List<com.example.wishpchatroom.data.InboxItem>>(emptyList())
+    var claimResult: Resource<Unit> = Resource.Success(Unit)
+    var requestResult: Resource<Unit> = Resource.Success(Unit)
+    var acceptResult: Resource<String> = Resource.Success("dm_a_b")
+    var removeFriendResult: Resource<Unit> = Resource.Success(Unit)
+    val claimed = mutableListOf<String>()
+    val requested = mutableListOf<String>()
+    val accepted = mutableListOf<com.example.wishpchatroom.data.FriendRequest>()
+    val removedRequests = mutableListOf<com.example.wishpchatroom.data.FriendRequest>()
+    val removedFriends = mutableListOf<String>()
+    val reads = mutableListOf<String>()
+    val pins = mutableListOf<Pair<String, Boolean>>()
+    val mutes = mutableListOf<Pair<String, Boolean>>()
+    val archives = mutableListOf<Pair<String, Boolean>>()
+
+    override fun observeMyHandle(): Flow<String?> = handle
+
+    override suspend fun claimHandle(handle: String): Resource<Unit> {
+        claimed += handle
+        return claimResult
+    }
+
+    override suspend fun findByHandle(handle: String): Resource<com.example.wishpchatroom.data.HandleInfo?> =
+        Resource.Success(null)
+
+    override suspend fun sendRequest(handle: String): Resource<Unit> {
+        requested += handle
+        return requestResult
+    }
+
+    override fun observeIncomingRequests() = incoming
+    override fun observeOutgoingRequests() = outgoing
+
+    override suspend fun acceptRequest(request: com.example.wishpchatroom.data.FriendRequest): Resource<String> {
+        accepted += request
+        return acceptResult
+    }
+
+    override suspend fun removeRequest(request: com.example.wishpchatroom.data.FriendRequest): Resource<Unit> {
+        removedRequests += request
+        return Resource.Success(Unit)
+    }
+
+    override fun observeFriends() = friends
+
+    override suspend fun removeFriend(friendUid: String): Resource<Unit> {
+        removedFriends += friendUid
+        return removeFriendResult
+    }
+
+    override fun observeInbox() = inbox
+
+    override suspend fun setPinned(roomCode: String, pinned: Boolean): Resource<Unit> {
+        pins += roomCode to pinned
+        return Resource.Success(Unit)
+    }
+
+    override suspend fun setMuted(roomCode: String, muted: Boolean): Resource<Unit> {
+        mutes += roomCode to muted
+        return Resource.Success(Unit)
+    }
+
+    override suspend fun setArchived(roomCode: String, archived: Boolean): Resource<Unit> {
+        archives += roomCode to archived
+        return Resource.Success(Unit)
+    }
+
+    override suspend fun markRead(roomCode: String) { reads += roomCode }
+}
+
 class FakeChatRepository : ChatRepository {
     override var currentUid: String? = "me"
 
