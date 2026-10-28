@@ -63,6 +63,25 @@ service cloud.firestore {
         && m.durationSeconds in [1800, 21600, 86400];
     }
 
+    // Whispers: text messages that hide themselves. The timer starts when someone other than the
+    // author first opens the message (firstViewedAt, stamped by the server); until then a hard cap of
+    // 24 hours after sending applies. Hiding is logical: rules cannot hide a document from a list read.
+    function isWhisper(data) {
+      return 'ttlSeconds' in data;
+    }
+
+    function whisperHidden(data) {
+      return isWhisper(data)
+        && (request.time >= data.timestamp + duration.value(24, 'h')
+            || ('firstViewedAt' in data
+                && request.time >= data.firstViewedAt + duration.value(data.ttlSeconds, 's')));
+    }
+
+    function messageIsWhisper(roomCode, messageId) {
+      let path = /databases/$(database)/documents/rooms/$(roomCode)/messages/$(messageId);
+      return exists(path) && isWhisper(get(path).data);
+    }
+
     function isOwner(roomCode) {
       return signedIn() && room(roomCode).creatorUid == request.auth.uid;
     }
@@ -378,14 +397,20 @@ service cloud.firestore {
           && room(roomCode).roomOpen == true
           && roomActive(roomCode)
           && !isLocked(roomCode)
-          && request.resource.data.keys().hasOnly(['uid', 'username', 'messageText', 'timestamp', 'replyTo'])
+          && request.resource.data.keys().hasOnly(['uid', 'username', 'messageText', 'timestamp', 'replyTo', 'ttlSeconds'])
           && request.resource.data.uid == request.auth.uid
           && request.resource.data.username == room(roomCode).members[request.auth.uid]
           && request.resource.data.messageText is string
           && request.resource.data.messageText.size() >= 1
           && request.resource.data.messageText.size() <= 2000
           && request.resource.data.timestamp == request.time
-          && (!('replyTo' in request.resource.data) || validReply(request.resource.data.replyTo));
+          && (!('replyTo' in request.resource.data)
+              || (validReply(request.resource.data.replyTo)
+                  && !messageIsWhisper(roomCode, request.resource.data.replyTo.id)))
+          // A whisper lasts 10 seconds, 1 minute or 1 hour after it is first opened, and cannot quote.
+          && (!('ttlSeconds' in request.resource.data)
+              || (request.resource.data.ttlSeconds in [10, 60, 3600]
+                  && !('replyTo' in request.resource.data)));
 
         // Messages are never rewritten wholesale. Exactly three kinds of change are allowed.
         allow update: if isMember(roomCode) && (
@@ -393,12 +418,23 @@ service cloud.firestore {
           (room(roomCode).roomOpen == true
             && roomActive(roomCode)
             && resource.data.uid == request.auth.uid
+            && !isWhisper(resource.data)
             && resource.data.get('deleted', false) != true
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['messageText', 'edited'])
             && request.resource.data.edited == true
             && request.resource.data.messageText is string
             && request.resource.data.messageText.size() >= 1
             && request.resource.data.messageText.size() <= 2000)
+          ||
+          // Someone other than the author opens a whisper for the first time: the server stamps the
+          // moment, once, and only before the 24 hour cap.
+          (roomActive(roomCode)
+            && resource.data.uid != request.auth.uid
+            && isWhisper(resource.data)
+            && !('firstViewedAt' in resource.data)
+            && request.time < resource.data.timestamp + duration.value(24, 'h')
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['firstViewedAt'])
+            && request.resource.data.firstViewedAt == request.time)
           ||
           // The author or the room owner removes a message. The document stays (so replies to it
           // still resolve) but its text is cleared.
@@ -417,7 +453,10 @@ service cloud.firestore {
             && request.resource.data.reactions.keys().hasOnly(['👍', '😂', '😮', '😢', '🙏']))
         );
 
-        allow delete: if isOwner(roomCode);
+        // The owner can delete anything. Any member can delete a whisper once it is hidden, which is the
+        // best-effort cleanup done by clients (nothing guarantees it happens).
+        allow delete: if isOwner(roomCode)
+          || (isMember(roomCode) && whisperHidden(resource.data));
       }
 
       // Bans: only the owner manages them; the join rule above refuses banned uids.
