@@ -343,7 +343,8 @@ fun MessageActionsDialog(
     onDelete: () -> Unit,
     onDismiss: () -> Unit,
     onReport: () -> Unit = {},
-    onBlock: () -> Unit = {}
+    onBlock: () -> Unit = {},
+    onSaveNote: () -> Unit = {}
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -364,6 +365,7 @@ fun MessageActionsDialog(
                 }
                 if (isRoomOpen) ActionButton(stringResource(R.string.reply), onReply)
                 ActionButton(stringResource(R.string.copy_text), onCopy)
+                ActionButton(stringResource(R.string.mission_save_note), onSaveNote)
                 if (isMine && isRoomOpen) ActionButton(stringResource(R.string.edit_message), onEdit)
                 if (isMine || isRoomOwner) {
                     ActionButton(stringResource(R.string.delete_message), onDelete, isDestructive = true)

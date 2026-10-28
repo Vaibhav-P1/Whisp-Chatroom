@@ -39,12 +39,14 @@ class MainActivity : ComponentActivity() {
         setContent {
             val navController = rememberNavController()
             val authViewModel: AuthViewModel = hiltViewModel()
+            // wishp://join/CODE opens the join form with the room code filled in.
+            val joinCode = remember { intent?.data?.takeIf { it.scheme == "wishp" && it.host == "join" }?.lastPathSegment }
             WishpChatRoomTheme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    NavigationGraph(navController = navController, authViewModel = authViewModel)
+                    NavigationGraph(navController = navController, authViewModel = authViewModel, joinCode = joinCode)
                 }
             }
         }
@@ -54,7 +56,8 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun NavigationGraph(
     navController: NavHostController,
-    authViewModel: AuthViewModel
+    authViewModel: AuthViewModel,
+    joinCode: String? = null
 ) {
     // Decided once, synchronously, so a logged-in user never sees the signup screen on cold start.
     val startDestination = remember {
@@ -95,6 +98,8 @@ fun NavigationGraph(
         composable(Screen.ChatRoomsScreen.route) {
             ChatRoomScreen(
                 authViewModel = authViewModel,
+                initialJoinCode = joinCode,
+                onOpenNotes = { navController.navigate(Screen.NotesScreen.route) },
                 onOpenInbox = { navController.navigate(Screen.InboxScreen.route) },
                 onOpenFriends = { navController.navigate(Screen.ContactsScreen.route) },
                 onJoinRoom = { roomCode ->
@@ -115,6 +120,9 @@ fun NavigationGraph(
                 onOpenChat = { roomCode -> navController.navigate("${Screen.ChatScreen.route}/$roomCode") },
                 onOpenFriends = { navController.navigate(Screen.ContactsScreen.route) }
             )
+        }
+        composable(Screen.NotesScreen.route) {
+            SavedNotesScreen(onBack = { navController.popBackStack() })
         }
         composable(Screen.ContactsScreen.route) {
             ContactsScreen(

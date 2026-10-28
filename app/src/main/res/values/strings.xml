@@ -127,6 +127,35 @@
     <string name="open_messages">Messages</string>
     <string name="open_friends">Friends</string>
 
+    <!-- Mission rooms -->
+    <string name="mission_room">Mission room (ends on its own)</string>
+    <string name="mission_title">Mission title</string>
+    <string name="mission_goal">Goal (optional)</string>
+    <string name="mission_duration">How long it lasts</string>
+    <string name="mission_hint">When time is up the room becomes read-only for 24 hours, then it is no longer available. The duration cannot be extended.</string>
+    <string name="mission_panel_title">Mission</string>
+    <string name="mission_goal_label">Goal</string>
+    <string name="mission_announcement">Announcement</string>
+    <string name="mission_announcement_hint">Post an announcement</string>
+    <string name="mission_post">Post</string>
+    <string name="mission_checklist">Checklist</string>
+    <string name="mission_add_task_hint">Add a task</string>
+    <string name="mission_add">Add</string>
+    <string name="mission_outcome">Final outcome</string>
+    <string name="mission_outcome_hint">What was achieved?</string>
+    <string name="mission_save_outcome">Save outcome</string>
+    <string name="mission_remaining">%1$s left</string>
+    <string name="mission_ended_banner">This mission has ended. You can read everything for the next 24 hours; save what you need.</string>
+    <string name="mission_ended_short">Mission ended</string>
+    <string name="mission_save_note">Save to notes</string>
+    <string name="mission_save_tasks">Save checklist</string>
+    <string name="mission_share_link">Share invite link</string>
+    <string name="mission_invite_message">Join my mission %1$s in WishP Chat. Open: %2$s or use room code %3$s</string>
+    <string name="open_notes">Saved notes</string>
+    <string name="notes_title">Saved notes</string>
+    <string name="notes_empty">Nothing saved yet. Long-press a message and choose Save to notes.</string>
+    <string name="notes_from">%1$s in %2$s</string>
+
     <!-- Safety -->
     <string name="report">Report</string>
     <string name="report_title">Report %1$s</string>
