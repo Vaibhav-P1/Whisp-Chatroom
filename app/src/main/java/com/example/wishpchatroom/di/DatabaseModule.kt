@@ -3,6 +3,7 @@ package com.example.wishpchatroom.di
 import android.content.Context
 import androidx.room.Room
 import com.example.wishpchatroom.data.local.AppDatabase
+import com.example.wishpchatroom.data.local.MIGRATION_2_3
 import com.example.wishpchatroom.data.local.MessageDao
 import dagger.Module
 import dagger.Provides
@@ -19,7 +20,8 @@ object DatabaseModule {
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): AppDatabase =
         Room.databaseBuilder(context, AppDatabase::class.java, "wishp.db")
-            .fallbackToDestructiveMigration()
+            .addMigrations(MIGRATION_2_3)
+            .fallbackToDestructiveMigrationFrom(1)
             .build()
 
     @Provides

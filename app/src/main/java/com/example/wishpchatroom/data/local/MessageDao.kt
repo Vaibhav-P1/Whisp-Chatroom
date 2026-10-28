@@ -19,9 +19,13 @@ interface MessageDao {
      */
     @Query(
         "SELECT * FROM messages WHERE roomCode = :roomCode AND deleted = 0 " +
-            "AND messageText LIKE :pattern ESCAPE '\\' ORDER BY timestamp DESC, id DESC LIMIT :limit"
+            "AND messageText LIKE :pattern ESCAPE '\\' " +
+            // Hidden whispers, and whispers nobody has opened yet (unless they are mine), never match.
+            "AND (hideAt IS NULL OR hideAt > :nowMillis) " +
+            "AND (ttlSeconds IS NULL OR uid = :myUid OR firstViewedAt IS NOT NULL) " +
+            "ORDER BY timestamp DESC, id DESC LIMIT :limit"
     )
-    fun search(roomCode: String, pattern: String, limit: Int): Flow<List<MessageEntity>>
+    fun search(roomCode: String, pattern: String, limit: Int, nowMillis: Long, myUid: String): Flow<List<MessageEntity>>
 
     @Query("SELECT COUNT(*) FROM messages WHERE roomCode = :roomCode")
     suspend fun count(roomCode: String): Int
@@ -50,6 +54,17 @@ interface MessageDao {
 
     @Query("UPDATE messages SET reactionsJson = :reactionsJson WHERE id = :id")
     suspend fun updateReactions(id: String, reactionsJson: String)
+
+    @Query("UPDATE messages SET firstViewedAt = :viewedAt, hideAt = :hideAt WHERE id = :id")
+    suspend fun markViewed(id: String, viewedAt: Long, hideAt: Long?)
+
+    /** Ids of hidden whispers of a room, for the best-effort deletion on the server. */
+    @Query("SELECT id FROM messages WHERE roomCode = :roomCode AND hideAt IS NOT NULL AND hideAt <= :nowMillis LIMIT :limit")
+    suspend fun hiddenIds(roomCode: String, nowMillis: Long, limit: Int): List<String>
+
+    /** Removes every hidden whisper from the cache. */
+    @Query("DELETE FROM messages WHERE hideAt IS NOT NULL AND hideAt <= :nowMillis")
+    suspend fun purgeHidden(nowMillis: Long): Int
 
     @Query("DELETE FROM messages WHERE roomCode = :roomCode")
     suspend fun deleteRoom(roomCode: String)

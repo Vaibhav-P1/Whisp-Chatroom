@@ -34,7 +34,11 @@ data class MessageEntity(
     val edited: Boolean = false,
     val deleted: Boolean = false,
     // Reactions as JSON ({"👍":["uid1","uid2"]}) so the table stays flat.
-    val reactionsJson: String = "{}"
+    val reactionsJson: String = "{}",
+    // Whisper fields (null for normal messages). hideAt is derived, stored so queries can filter on it.
+    val ttlSeconds: Long? = null,
+    val firstViewedAt: Long? = null,
+    val hideAt: Long? = null
 )
 
 fun MessageEntity.toDomain() = Message(
@@ -47,7 +51,9 @@ fun MessageEntity.toDomain() = Message(
     replyTo = replyToId?.let { ReplyRef(it, replyToUsername.orEmpty(), replyToText.orEmpty()) },
     edited = edited,
     deleted = deleted,
-    reactions = decodeReactions(reactionsJson)
+    reactions = decodeReactions(reactionsJson),
+    ttlSeconds = ttlSeconds,
+    firstViewedAt = firstViewedAt
 )
 
 fun encodeReactions(reactions: Map<String, List<String>>): String {

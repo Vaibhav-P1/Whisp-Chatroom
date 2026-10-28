@@ -74,6 +74,12 @@ android {
     composeOptions {
         kotlinCompilerExtensionVersion = libs.versions.composeCompiler.get()
     }
+    sourceSets {
+        // The exported Room schemas are the input of the migration test. Robolectric reads the merged
+        // assets of the debug variant, so they are added there (the release build does not contain them).
+        getByName("debug").assets.srcDir("$projectDir/schemas")
+    }
+
     testOptions {
         unitTests {
             isIncludeAndroidResources = true
@@ -129,6 +135,7 @@ dependencies {
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.turbine)
+    testImplementation(libs.androidx.room.testing)
     // The android.jar stub of org.json does nothing on the JVM; the real one lets reactions be encoded in tests.
     testImplementation(libs.json.test)
     // Compose UI tests run on the JVM with Robolectric (no emulator needed, so they also run in CI).
