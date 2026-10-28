@@ -48,7 +48,9 @@ import com.example.wishpchatroom.viewmodel.RoomViewModel
 fun ChatRoomScreen(
     authViewModel: AuthViewModel,
     onJoinRoom: (String) -> Unit,
-    onNavigateToLogin: () -> Unit
+    onNavigateToLogin: () -> Unit,
+    onOpenInbox: () -> Unit = {},
+    onOpenFriends: () -> Unit = {}
 ) {
     val roomViewModel: RoomViewModel = hiltViewModel()
     val context = LocalContext.current
@@ -129,6 +131,17 @@ fun ChatRoomScreen(
                 }
             }
         )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
+            OutlinedButton(onClick = onOpenInbox, modifier = Modifier.weight(1f)) {
+                Text(stringResource(R.string.open_messages))
+            }
+            OutlinedButton(onClick = onOpenFriends, modifier = Modifier.weight(1f)) {
+                Text(stringResource(R.string.open_friends))
+            }
+        }
 
         Spacer(modifier = Modifier.height(24.dp))
 

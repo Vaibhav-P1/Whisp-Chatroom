@@ -23,6 +23,7 @@
 # so R8 must not rename or strip them. Messages are mapped by hand and need no rule.
 -keep class com.example.wishpchatroom.data.Room { *; }
 -keep class com.example.wishpchatroom.data.User { *; }
+-keep class com.example.wishpchatroom.data.LastMessage { *; }
 
 # Keep line numbers in crash reports.
 -keepattributes SourceFile,LineNumberTable

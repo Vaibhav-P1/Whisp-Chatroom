@@ -22,6 +22,7 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.example.wishpchatroom.data.isDmRoom
 import com.example.wishpchatroom.navigation.Screen
 import com.example.wishpchatroom.ui.theme.WishpChatRoomTheme
 import com.example.wishpchatroom.viewmodel.AuthViewModel
@@ -94,6 +95,8 @@ fun NavigationGraph(
         composable(Screen.ChatRoomsScreen.route) {
             ChatRoomScreen(
                 authViewModel = authViewModel,
+                onOpenInbox = { navController.navigate(Screen.InboxScreen.route) },
+                onOpenFriends = { navController.navigate(Screen.ContactsScreen.route) },
                 onJoinRoom = { roomCode ->
                     Log.d("Navigation", "Joining room: $roomCode")
                     navController.navigate("${Screen.ChatScreen.route}/$roomCode")
@@ -106,6 +109,19 @@ fun NavigationGraph(
                 }
             )
         }
+        composable(Screen.InboxScreen.route) {
+            InboxScreen(
+                onBack = { navController.popBackStack() },
+                onOpenChat = { roomCode -> navController.navigate("${Screen.ChatScreen.route}/$roomCode") },
+                onOpenFriends = { navController.navigate(Screen.ContactsScreen.route) }
+            )
+        }
+        composable(Screen.ContactsScreen.route) {
+            ContactsScreen(
+                onBack = { navController.popBackStack() },
+                onOpenChat = { roomCode -> navController.navigate("${Screen.ChatScreen.route}/$roomCode") }
+            )
+        }
         composable("${Screen.ChatScreen.route}/{roomCode}") { backStackEntry ->
             val roomCode = backStackEntry.arguments?.getString("roomCode") ?: ""
             Log.d("Navigation", "In ChatScreen with room: $roomCode")
@@ -113,8 +129,13 @@ fun NavigationGraph(
                 roomCode = roomCode,
                 onNavigateBack = {
                     Log.d("Navigation", "Back button clicked - navigating back")
-                    navController.navigate(Screen.ChatRoomsScreen.route) {
-                        popUpTo("${Screen.ChatScreen.route}/$roomCode") { inclusive = true }
+                    // A DM was opened from the inbox or friends list: go back to where it came from.
+                    if (isDmRoom(roomCode) && navController.previousBackStackEntry != null) {
+                        navController.popBackStack()
+                    } else {
+                        navController.navigate(Screen.ChatRoomsScreen.route) {
+                            popUpTo("${Screen.ChatScreen.route}/$roomCode") { inclusive = true }
+                        }
                     }
                 }
             )

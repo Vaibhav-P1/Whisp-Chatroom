@@ -1,6 +1,8 @@
 package com.example.wishpchatroom.di
 
 import com.example.wishpchatroom.data.ChatRepository
+import com.example.wishpchatroom.data.ContactsRepository
+import com.example.wishpchatroom.data.FirestoreContactsRepository
 import com.example.wishpchatroom.data.FirestoreModerationRepository
 import com.example.wishpchatroom.data.FirestoreRoomRepository
 import com.example.wishpchatroom.data.FirestoreUserRepository
@@ -31,6 +33,10 @@ abstract class RepositoryModule {
     @Binds
     @Singleton
     abstract fun bindChatRepository(impl: OfflineFirstChatRepository): ChatRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindContactsRepository(impl: FirestoreContactsRepository): ContactsRepository
 
     @Binds
     @Singleton
